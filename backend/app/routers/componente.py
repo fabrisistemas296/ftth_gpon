@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.models import Componente, Topologia
+from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.models.models import Componente, Topologia, Proyecto, Usuario
 from app.schemas.componente import (
     ComponenteCreate,
     ComponenteResponse
@@ -15,27 +16,53 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=list[ComponenteResponse])
-def obtener_componentes(db: Session = Depends(get_db)):
-    componentes = db.query(Componente).all()
+def _obtener_proyecto_de_topologia(topologia_id: int, db: Session) -> Proyecto | None:
+    topologia = db.query(Topologia).filter(Topologia.id == topologia_id).first()
+    if not topologia:
+        return None
+    return db.query(Proyecto).filter(Proyecto.id == topologia.proyecto_id).first()
 
-    return componentes
+
+def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session, requerir_dueno: bool = False):
+    """
+    Verifica que el usuario pueda acceder a la topología indicada.
+    - Alumno: solo si es dueño del proyecto asociado.
+    - Profesor: solo lectura (requerir_dueno=True lo bloquea siempre,
+      porque un profesor nunca es "dueño" de un proyecto de alumno).
+    """
+    proyecto = _obtener_proyecto_de_topologia(topologia_id, db)
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="La topología no existe")
+
+    if usuario.rol == "alumno" and proyecto.usuario_id != usuario.id:
+        raise HTTPException(status_code=403, detail="No tenés permiso sobre esta topología")
+
+    if requerir_dueno and usuario.rol != "alumno":
+        raise HTTPException(status_code=403, detail="Esta acción requiere ser el alumno dueño del proyecto")
+
+
+@router.get("/{componente_id}", response_model=ComponenteResponse)
+def obtener_componente(
+    componente_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    componente = db.query(Componente).filter(Componente.id == componente_id).first()
+    if not componente:
+        raise HTTPException(status_code=404, detail="El componente no existe")
+
+    _verificar_acceso_topologia(componente.topologia_id, usuario, db)
+
+    return componente
 
 
 @router.post("/", response_model=ComponenteResponse)
 def crear_componente(
     componente: ComponenteCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requerir_rol_alumno),
 ):
-    topologia = db.query(Topologia).filter(
-        Topologia.id == componente.topologia_id
-    ).first()
-
-    if not topologia:
-        raise HTTPException(
-            status_code=404,
-            detail="La topología no existe"
-        )
+    _verificar_acceso_topologia(componente.topologia_id, usuario, db, requerir_dueno=True)
 
     nuevo_componente = Componente(
         topologia_id=componente.topologia_id,
@@ -59,31 +86,18 @@ def crear_componente(
 
     return nuevo_componente
 
-@router.get("/{componente_id}", response_model=ComponenteResponse)
-def obtener_componente(componente_id: int, db: Session = Depends(get_db)):
-    componente = db.query(Componente).filter(
-        Componente.id == componente_id
-    ).first()
-
-    if not componente:
-        raise HTTPException(
-            status_code=404,
-            detail="El componente no existe"
-        )
-
-    return componente
 
 @router.delete("/{componente_id}", response_model=ComponenteResponse)
-def eliminar_componente(componente_id: int, db: Session = Depends(get_db)):
-    componente = db.query(Componente).filter(
-        Componente.id == componente_id
-    ).first()
-
+def eliminar_componente(
+    componente_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requerir_rol_alumno),
+):
+    componente = db.query(Componente).filter(Componente.id == componente_id).first()
     if not componente:
-        raise HTTPException(
-            status_code=404,
-            detail="El componente no existe"
-        )
+        raise HTTPException(status_code=404, detail="El componente no existe")
+
+    _verificar_acceso_topologia(componente.topologia_id, usuario, db, requerir_dueno=True)
 
     db.delete(componente)
     db.commit()

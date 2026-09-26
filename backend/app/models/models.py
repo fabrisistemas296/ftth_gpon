@@ -211,6 +211,11 @@ class ResultadoTrafico(Base):
         nullable=False
     )
 
+    throughput_por_usuario_mbps = Column(
+        Float,
+        nullable=True
+    )
+
     utilizacion_pct = Column(
         Float,
         nullable=False
@@ -219,4 +224,9 @@ class ResultadoTrafico(Base):
     congestion = Column(
         Integer,
         nullable=False
+    )
+
+    tiempo_respuesta_ms = Column(
+        Float,
+        nullable=True
     )

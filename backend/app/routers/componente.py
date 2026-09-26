@@ -87,6 +87,49 @@ def crear_componente(
     return nuevo_componente
 
 
+@router.put("/{componente_id}", response_model=ComponenteResponse)
+def actualizar_componente(
+    componente_id: int,
+    datos: ComponenteCreate,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requerir_rol_alumno),
+):
+    """
+    Actualiza los parámetros de un componente existente (RF-08 a RF-11).
+    El campo topologia_id no se modifica: un componente no cambia de
+    topología, solo se editan sus parámetros y posición.
+    """
+    componente = db.query(Componente).filter(Componente.id == componente_id).first()
+    if not componente:
+        raise HTTPException(status_code=404, detail="El componente no existe")
+
+    _verificar_acceso_topologia(componente.topologia_id, usuario, db, requerir_dueno=True)
+
+    if datos.topologia_id != componente.topologia_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede mover un componente a otra topología"
+        )
+
+    componente.tipo = datos.tipo
+    componente.posicion_x = datos.posicion_x
+    componente.posicion_y = datos.posicion_y
+    componente.potencia_tx_dbm = datos.potencia_tx_dbm
+    componente.clase_potencia = datos.clase_potencia
+    componente.longitud_km = datos.longitud_km
+    componente.atenuacion_db_km = datos.atenuacion_db_km
+    componente.cantidad_conectores = datos.cantidad_conectores
+    componente.cantidad_empalmes = datos.cantidad_empalmes
+    componente.relacion_division = datos.relacion_division
+    componente.sensibilidad_min_dbm = datos.sensibilidad_min_dbm
+    componente.potencia_sobrecarga_dbm = datos.potencia_sobrecarga_dbm
+
+    db.commit()
+    db.refresh(componente)
+
+    return componente
+
+
 @router.delete("/{componente_id}", response_model=ComponenteResponse)
 def eliminar_componente(
     componente_id: int,

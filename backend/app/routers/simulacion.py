@@ -1,141 +1,211 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.core.deps import get_usuario_actual, requerir_rol_alumno
-from app.models.models import Conexion, Topologia, Componente, Proyecto, Usuario
-from app.schemas.conexion import ConexionCreate, ConexionResponse
+from app.models.models import (
+    Simulacion,
+    Proyecto,
+    Topologia,
+    EscenarioPredefinido,
+    ResultadoOptico,
+    ResultadoTrafico,
+    Usuario
+)
+from app.schemas.simulacion import (
+    SimulacionCreate,
+    SimulacionResponse
+)
+from app.schemas.resultado_optico import ResultadoOpticoResponse
+from app.schemas.resultado_trafico import ResultadoTraficoResponse
 
-
-router = APIRouter(
-    prefix="/conexiones",
-    tags=["Conexiones"]
+from app.services.calculo_optico import (
+    calcular_resultados_opticos,
+    resultado_peor_caso,
+    TopologiaInvalidaError,
+)
+from app.services.calculo_trafico import (
+    calcular_resultado_trafico,
+    ParametrosTraficoInvalidosError,
 )
 
 
-def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session):
-    topologia = db.query(Topologia).filter(Topologia.id == topologia_id).first()
-    if not topologia:
-        raise HTTPException(status_code=404, detail="La topología no existe")
+router = APIRouter(
+    prefix="/simulaciones",
+    tags=["Simulaciones"]
+)
 
-    proyecto = db.query(Proyecto).filter(Proyecto.id == topologia.proyecto_id).first()
-    if not proyecto:
-        raise HTTPException(status_code=404, detail="El proyecto asociado no existe")
 
+class ResultadoCalculoResponse(BaseModel):
+    resultado_optico: ResultadoOpticoResponse
+    resultado_trafico: ResultadoTraficoResponse
+
+
+def _verificar_acceso_proyecto(proyecto: Proyecto, usuario: Usuario):
     if usuario.rol == "alumno" and proyecto.usuario_id != usuario.id:
-        raise HTTPException(status_code=403, detail="No tenés permiso sobre esta topología")
+        raise HTTPException(status_code=403, detail="No tenés permiso sobre este proyecto")
 
 
-def validar_conexion(conexion: ConexionCreate, db: Session):
-    topologia = db.query(Topologia).filter(Topologia.id == conexion.topologia_id).first()
-    if not topologia:
-        raise HTTPException(status_code=404, detail="La topología no existe")
-
-    componente_origen = db.query(Componente).filter(
-        Componente.id == conexion.componente_origen_id
-    ).first()
-    if not componente_origen:
-        raise HTTPException(status_code=404, detail="El componente origen no existe")
-
-    componente_destino = db.query(Componente).filter(
-        Componente.id == conexion.componente_destino_id
-    ).first()
-    if not componente_destino:
-        raise HTTPException(status_code=404, detail="El componente destino no existe")
-
-    if conexion.componente_origen_id == conexion.componente_destino_id:
-        raise HTTPException(
-            status_code=400,
-            detail="El componente origen y destino no pueden ser iguales"
-        )
-
-    if componente_origen.topologia_id != conexion.topologia_id:
-        raise HTTPException(
-            status_code=400,
-            detail="El componente origen no pertenece a la topología indicada"
-        )
-
-    if componente_destino.topologia_id != conexion.topologia_id:
-        raise HTTPException(
-            status_code=400,
-            detail="El componente destino no pertenece a la topología indicada"
-        )
-
-
-@router.get("/{conexion_id}", response_model=ConexionResponse)
-def obtener_conexion(
-    conexion_id: int,
+@router.get("/{simulacion_id}", response_model=SimulacionResponse)
+def obtener_simulacion(
+    simulacion_id: int,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_actual),
 ):
-    conexion = db.query(Conexion).filter(Conexion.id == conexion_id).first()
-    if not conexion:
-        raise HTTPException(status_code=404, detail="La conexión no existe")
+    simulacion = db.query(Simulacion).filter(Simulacion.id == simulacion_id).first()
+    if not simulacion:
+        raise HTTPException(status_code=404, detail="La simulación no existe")
 
-    _verificar_acceso_topologia(conexion.topologia_id, usuario, db)
+    proyecto = db.query(Proyecto).filter(Proyecto.id == simulacion.proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="El proyecto asociado no existe")
 
-    return conexion
+    _verificar_acceso_proyecto(proyecto, usuario)
+
+    return simulacion
 
 
-@router.post("/", response_model=ConexionResponse)
-def crear_conexion(
-    conexion: ConexionCreate,
+@router.get("/", response_model=list[SimulacionResponse])
+def obtener_simulaciones_por_proyecto(
+    proyecto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    """
+    Lista las simulaciones de un proyecto puntual.
+    Se exige proyecto_id como query param para no listar simulaciones
+    de todos los proyectos sin filtro de dueño.
+    """
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="El proyecto no existe")
+
+    _verificar_acceso_proyecto(proyecto, usuario)
+
+    return db.query(Simulacion).filter(Simulacion.proyecto_id == proyecto_id).all()
+
+
+@router.post("/", response_model=SimulacionResponse)
+def crear_simulacion(
+    datos: SimulacionCreate,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(requerir_rol_alumno),
 ):
-    validar_conexion(conexion, db)
-    _verificar_acceso_topologia(conexion.topologia_id, usuario, db)
+    proyecto = db.query(Proyecto).filter(Proyecto.id == datos.proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="El proyecto no existe")
 
-    nueva_conexion = Conexion(
-        topologia_id=conexion.topologia_id,
-        componente_origen_id=conexion.componente_origen_id,
-        componente_destino_id=conexion.componente_destino_id
+    if proyecto.usuario_id != usuario.id:
+        raise HTTPException(
+            status_code=403,
+            detail="No tenés permiso para simular sobre este proyecto"
+        )
+
+    escenario = None
+    if datos.escenario_id is not None:
+        escenario = db.query(EscenarioPredefinido).filter(
+            EscenarioPredefinido.id == datos.escenario_id
+        ).first()
+        if not escenario:
+            raise HTTPException(status_code=404, detail="El escenario no existe")
+
+    # RF-22/RF-23: si no se especificó cantidad_usuarios, se autocompleta
+    # con el valor por defecto del escenario elegido. Si se especificó,
+    # se respeta el valor dado por el usuario (el escenario es solo un
+    # punto de partida sugerido, no una restricción).
+    cantidad_usuarios = datos.cantidad_usuarios
+    if cantidad_usuarios is None:
+        cantidad_usuarios = escenario.cantidad_usuarios_default
+
+    nueva_simulacion = Simulacion(
+        proyecto_id=datos.proyecto_id,
+        escenario_id=datos.escenario_id,
+        cantidad_usuarios=cantidad_usuarios,
+        tipo_consumo=datos.tipo_consumo
     )
 
-    db.add(nueva_conexion)
+    db.add(nueva_simulacion)
     db.commit()
-    db.refresh(nueva_conexion)
+    db.refresh(nueva_simulacion)
 
-    return nueva_conexion
+    return nueva_simulacion
 
 
-@router.put("/{conexion_id}", response_model=ConexionResponse)
-def modificar_conexion(
-    conexion_id: int,
-    conexion_data: ConexionCreate,
+@router.post("/{simulacion_id}/calcular", response_model=ResultadoCalculoResponse)
+def calcular_simulacion(
+    simulacion_id: int,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(requerir_rol_alumno),
 ):
-    conexion = db.query(Conexion).filter(Conexion.id == conexion_id).first()
-    if not conexion:
-        raise HTTPException(status_code=404, detail="La conexión no existe")
+    """
+    Ejecuta el motor de cálculo (óptico + tráfico) sobre la simulación
+    indicada, a partir de la topología real del proyecto, y persiste
+    (o actualiza) sus resultados.
+    """
+    simulacion = db.query(Simulacion).filter(Simulacion.id == simulacion_id).first()
+    if not simulacion:
+        raise HTTPException(status_code=404, detail="La simulación no existe")
 
-    validar_conexion(conexion_data, db)
-    _verificar_acceso_topologia(conexion_data.topologia_id, usuario, db)
+    proyecto = db.query(Proyecto).filter(Proyecto.id == simulacion.proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="El proyecto asociado no existe")
 
-    conexion.topologia_id = conexion_data.topologia_id
-    conexion.componente_origen_id = conexion_data.componente_origen_id
-    conexion.componente_destino_id = conexion_data.componente_destino_id
+    if proyecto.usuario_id != usuario.id:
+        raise HTTPException(status_code=403, detail="No tenés permiso sobre esta simulación")
+
+    topologia = db.query(Topologia).filter(Topologia.proyecto_id == proyecto.id).first()
+    if not topologia:
+        raise HTTPException(status_code=404, detail="El proyecto no tiene una topología definida")
+
+    # --- Cálculo óptico ---
+    try:
+        resultados_enlaces = calcular_resultados_opticos(db, topologia.id)
+        peor_caso = resultado_peor_caso(resultados_enlaces)
+    except TopologiaInvalidaError as e:
+        raise HTTPException(status_code=422, detail=f"Topología inválida: {e}")
+
+    # --- Cálculo de tráfico ---
+    try:
+        resultado_trafico_calc = calcular_resultado_trafico(
+            cantidad_usuarios=simulacion.cantidad_usuarios,
+            tipo_consumo=simulacion.tipo_consumo,
+        )
+    except ParametrosTraficoInvalidosError as e:
+        raise HTTPException(status_code=422, detail=f"Parámetros de tráfico inválidos: {e}")
+
+    # --- Persistencia (crea o actualiza, relación 1:1 con la simulación) ---
+    resultado_optico_db = db.query(ResultadoOptico).filter(
+        ResultadoOptico.simulacion_id == simulacion_id
+    ).first()
+
+    if resultado_optico_db is None:
+        resultado_optico_db = ResultadoOptico(simulacion_id=simulacion_id)
+        db.add(resultado_optico_db)
+
+    resultado_optico_db.perdida_total_db = peor_caso.perdida_total_db
+    resultado_optico_db.potencia_recibida_dbm = peor_caso.potencia_recibida_dbm
+    resultado_optico_db.estado_operativo = peor_caso.estado_operativo
+
+    resultado_trafico_db = db.query(ResultadoTrafico).filter(
+        ResultadoTrafico.simulacion_id == simulacion_id
+    ).first()
+
+    if resultado_trafico_db is None:
+        resultado_trafico_db = ResultadoTrafico(simulacion_id=simulacion_id)
+        db.add(resultado_trafico_db)
+
+    resultado_trafico_db.throughput_mbps = resultado_trafico_calc.throughput_mbps
+    resultado_trafico_db.throughput_por_usuario_mbps = resultado_trafico_calc.throughput_por_usuario_mbps
+    resultado_trafico_db.utilizacion_pct = resultado_trafico_calc.utilizacion_pct
+    resultado_trafico_db.congestion = int(resultado_trafico_calc.congestion)
+    resultado_trafico_db.tiempo_respuesta_ms = resultado_trafico_calc.tiempo_respuesta_ms
 
     db.commit()
-    db.refresh(conexion)
+    db.refresh(resultado_optico_db)
+    db.refresh(resultado_trafico_db)
 
-    return conexion
-
-
-@router.delete("/{conexion_id}")
-def eliminar_conexion(
-    conexion_id: int,
-    db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
-):
-    conexion = db.query(Conexion).filter(Conexion.id == conexion_id).first()
-    if not conexion:
-        raise HTTPException(status_code=404, detail="La conexión no existe")
-
-    _verificar_acceso_topologia(conexion.topologia_id, usuario, db)
-
-    db.delete(conexion)
-    db.commit()
-
-    return {"message": "Conexión eliminada correctamente"}
+    return ResultadoCalculoResponse(
+        resultado_optico=resultado_optico_db,
+        resultado_trafico=resultado_trafico_db,
+    )

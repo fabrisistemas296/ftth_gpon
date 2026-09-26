@@ -4,8 +4,22 @@ from datetime import datetime, timezone
 
 from app.database import get_db
 from app.core.deps import get_usuario_actual, requerir_rol_alumno
-from app.models.models import Proyecto, Usuario
+from app.models.models import (
+    Proyecto,
+    Topologia,
+    Componente,
+    Conexion,
+    Simulacion,
+    ResultadoOptico,
+    ResultadoTrafico,
+    Usuario,
+)
 from app.schemas.proyecto import ProyectoCreate, ProyectoResponse
+from app.schemas.proyecto_detalle import (
+    ProyectoDetalleResponse,
+    TopologiaDetalleResponse,
+    SimulacionDetalleResponse,
+)
 
 router = APIRouter(
     prefix="/proyectos",
@@ -72,6 +86,80 @@ def obtener_proyecto(
     _verificar_acceso_proyecto(proyecto, usuario)
 
     return proyecto
+
+
+@router.get("/{proyecto_id}/detalle", response_model=ProyectoDetalleResponse)
+def obtener_detalle_proyecto(
+    proyecto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    """
+    Vista completa de un proyecto: topología (con sus componentes y
+    conexiones) y todas sus simulaciones (con sus resultados), en una
+    sola respuesta. Pensado para el Profesor, que necesita revisar el
+    trabajo de un alumno sin encadenar múltiples llamadas; el Alumno
+    dueño del proyecto también puede usarlo.
+    """
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    _verificar_acceso_proyecto(proyecto, usuario)
+
+    # --- Topología, componentes y conexiones ---
+    topologia_db = db.query(Topologia).filter(Topologia.proyecto_id == proyecto_id).first()
+    topologia_detalle = None
+    if topologia_db:
+        componentes = db.query(Componente).filter(
+            Componente.topologia_id == topologia_db.id
+        ).all()
+        conexiones = db.query(Conexion).filter(
+            Conexion.topologia_id == topologia_db.id
+        ).all()
+        topologia_detalle = TopologiaDetalleResponse(
+            id=topologia_db.id,
+            proyecto_id=topologia_db.proyecto_id,
+            componentes=componentes,
+            conexiones=conexiones,
+        )
+
+    # --- Simulaciones con sus resultados ---
+    simulaciones_db = db.query(Simulacion).filter(
+        Simulacion.proyecto_id == proyecto_id
+    ).all()
+
+    simulaciones_detalle = []
+    for sim in simulaciones_db:
+        resultado_optico = db.query(ResultadoOptico).filter(
+            ResultadoOptico.simulacion_id == sim.id
+        ).first()
+        resultado_trafico = db.query(ResultadoTrafico).filter(
+            ResultadoTrafico.simulacion_id == sim.id
+        ).first()
+
+        simulaciones_detalle.append(
+            SimulacionDetalleResponse(
+                id=sim.id,
+                escenario_id=sim.escenario_id,
+                fecha_ejecucion=sim.fecha_ejecucion,
+                cantidad_usuarios=sim.cantidad_usuarios,
+                tipo_consumo=sim.tipo_consumo,
+                resultado_optico=resultado_optico,
+                resultado_trafico=resultado_trafico,
+            )
+        )
+
+    return ProyectoDetalleResponse(
+        id=proyecto.id,
+        nombre=proyecto.nombre,
+        descripcion=proyecto.descripcion,
+        usuario_id=proyecto.usuario_id,
+        fecha_creacion=proyecto.fecha_creacion,
+        fecha_modificacion=proyecto.fecha_modificacion,
+        topologia=topologia_detalle,
+        simulaciones=simulaciones_detalle,
+    )
 
 
 @router.put("/{proyecto_id}", response_model=ProyectoResponse)

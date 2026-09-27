@@ -1,8 +1,7 @@
-from sqlalchemy.orm import declarative_base
+from app.database import Base
 from sqlalchemy import Column, ForeignKey, Integer, String, text, Float
 from app.database import Base
 
-Base = declarative_base()
 
 
 class Usuario(Base):

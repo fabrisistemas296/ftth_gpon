@@ -1,6 +1,12 @@
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 
+from pathlib import Path
+
+#BASE_DIR = Path(__file__).resolve().parent.parent
+
+#DATABASE_URL = f"sqlite:///{BASE_DIR / 'ftth_gpon.db'}"
+
 DATABASE_URL = "sqlite:///./ftth_gpon"
 
 engine = create_engine(

@@ -5,6 +5,8 @@ Punto de entrada de la aplicación FastAPI.
 Registra todos los routers del sistema.
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,7 +23,17 @@ from app.routers import (
     resultado_trafico,
 )
 
+from app.inicializacion import inicializar_base
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    inicializar_base()  # crea tablas, escenarios y profesor si faltan
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Simulador Didáctico de Redes FTTH-GPON",
     description="API del simulador didáctico de redes FTTH basado en tecnología GPON.",
     version="0.1.0",

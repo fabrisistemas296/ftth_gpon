@@ -12,7 +12,8 @@ parámetros configurados en los componentes de la topología, evitando
 que un usuario pueda enviar un resultado inventado.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import isfinite, fsum
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,8 @@ from app.core.constantes import (
     PERDIDA_CONECTOR_DB,
     PERDIDA_EMPALME_DB,
     PERDIDAS_SPLITTER_DB,
+    ALCANCE_MAXIMO_GPON_KM,
+    PRESUPUESTOS_OPTICOS_DB,
 )
 
 
@@ -37,6 +40,9 @@ class ResultadoEnlace:
     potencia_recibida_dbm: float
     margen_db: float           # potencia_recibida - sensibilidad_min (cuánto "sobra")
     estado_operativo: str      # "operativo" | "fuera_de_rango"
+    longitud_total_km: float
+    margen_sobrecarga_db: float
+    motivos: list[str] = field(default_factory=list)
 
 
 # ------------------------------------------------------------------
@@ -78,9 +84,16 @@ def perdida_de_componente(componente: Componente) -> float:
 # ------------------------------------------------------------------
 def _construir_grafo(componentes: list[Componente], conexiones: list[Conexion]) -> dict[int, set[int]]:
     grafo: dict[int, set[int]] = {c.id: set() for c in componentes}
+    if len(grafo) != len(componentes):
+        raise TopologiaInvalidaError("Hay componentes con identificadores repetidos.")
     for conexion in conexiones:
-        grafo.setdefault(conexion.componente_origen_id, set()).add(conexion.componente_destino_id)
-        grafo.setdefault(conexion.componente_destino_id, set()).add(conexion.componente_origen_id)
+        origen, destino = conexion.componente_origen_id, conexion.componente_destino_id
+        if origen not in grafo or destino not in grafo:
+            raise TopologiaInvalidaError("Una conexión referencia componentes ajenos a la topología.")
+        if origen == destino or destino in grafo[origen]:
+            raise TopologiaInvalidaError("Hay conexiones repetidas o de un componente consigo mismo.")
+        grafo[origen].add(destino)
+        grafo[destino].add(origen)
     return grafo
 
 
@@ -131,6 +144,15 @@ def calcular_resultados_opticos(db: Session, topologia_id: int) -> list[Resultad
         Conexion.topologia_id == topologia_id
     ).all()
 
+    return calcular_enlaces(componentes, conexiones)
+
+
+def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) -> list[ResultadoEnlace]:
+    """Motor compartido por la vista previa sin persistencia y la simulación.
+
+    Acepta también objetos Pydantic con los mismos atributos que los modelos.
+    Los datos históricos se validan aquí: no se asumen válidos por estar guardados.
+    """
     olts = [c for c in componentes if c.tipo == "OLT"]
     onts = [c for c in componentes if c.tipo == "ONT_ONU"]
 
@@ -142,11 +164,48 @@ def calcular_resultados_opticos(db: Session, topologia_id: int) -> list[Resultad
         raise TopologiaInvalidaError("La topología no tiene ninguna ONT/ONU configurada.")
 
     olt = olts[0]
-    if olt.potencia_tx_dbm is None:
+    if olt.potencia_tx_dbm is None or not isfinite(olt.potencia_tx_dbm):
         raise TopologiaInvalidaError("La OLT no tiene configurada su potencia de transmisión.")
 
     grafo = _construir_grafo(componentes, conexiones)
     componentes_por_id = {c.id: c for c in componentes}
+
+    # GPON se representa como un árbol: un camino único hacia cada receptor.
+    # Un BFS sobre un ciclo elegiría arbitrariamente un camino y sus pérdidas.
+    padres = {olt.id: None}
+    cola = [olt.id]
+    for actual in cola:
+        for vecino in sorted(grafo[actual]):
+            if vecino == padres[actual]:
+                continue
+            if vecino in padres:
+                raise TopologiaInvalidaError("La red GPON no puede contener ciclos ni caminos alternativos.")
+            padres[vecino] = actual
+            cola.append(vecino)
+
+    for c in componentes:
+        if c.tipo not in {"OLT", "FIBRA", "SPLITTER", "ONT_ONU"}:
+            raise TopologiaInvalidaError(f"Tipo de componente no soportado (id={c.id}).")
+        if c.id not in padres:
+            raise TopologiaInvalidaError(f"El componente (id={c.id}) no está conectado a la OLT.")
+        grado = len(grafo[c.id])
+        if c.tipo == "FIBRA":
+            if grado != 2:
+                raise TopologiaInvalidaError(f"La fibra (id={c.id}) debe conectar dos extremos; la división requiere un splitter.")
+            if (c.longitud_km is None or not isfinite(c.longitud_km) or c.longitud_km <= 0
+                    or c.atenuacion_db_km is None or not isfinite(c.atenuacion_db_km)
+                    or not 0 <= c.atenuacion_db_km <= 2):
+                raise TopologiaInvalidaError(f"La fibra (id={c.id}) tiene longitud o atenuación inválidas.")
+            for campo, maximo in (("cantidad_conectores", 50), ("cantidad_empalmes", 100)):
+                valor = getattr(c, campo)
+                if valor is not None and (not isfinite(valor) or int(valor) != valor or not 0 <= valor <= maximo):
+                    raise TopologiaInvalidaError(f"La fibra (id={c.id}) tiene {campo} inválida.")
+        if c.tipo == "ONT_ONU" and grado != 1:
+            raise TopologiaInvalidaError(f"La ONT/ONU (id={c.id}) debe tener un único enlace y no puede actuar como tránsito.")
+        if c.tipo == "SPLITTER":
+            perdida_de_componente(c)  # valida la relación antes de interpretarla
+            if grado - 1 > int(c.relacion_division.split(":")[1]):
+                raise TopologiaInvalidaError(f"El splitter (id={c.id}) excede sus salidas {c.relacion_division}.")
 
     resultados: list[ResultadoEnlace] = []
 
@@ -162,21 +221,37 @@ def calcular_resultados_opticos(db: Session, topologia_id: int) -> list[Resultad
             perdida_de_componente(componentes_por_id[cid])
             for cid in camino[1:-1]
         )
+        longitud_total = fsum(
+            componentes_por_id[cid].longitud_km
+            for cid in camino[1:-1] if componentes_por_id[cid].tipo == "FIBRA"
+        )
+
+        if not isfinite(perdida_total) or not isfinite(longitud_total):
+            raise TopologiaInvalidaError(f"El recorrido hacia la ONT/ONU (id={ont.id}) tiene valores fuera de escala.")
 
         potencia_recibida = olt.potencia_tx_dbm - perdida_total
 
         sensibilidad_min = ont.sensibilidad_min_dbm
         potencia_sobrecarga = ont.potencia_sobrecarga_dbm
 
-        if sensibilidad_min is None or potencia_sobrecarga is None:
+        if (sensibilidad_min is None or potencia_sobrecarga is None
+                or not isfinite(sensibilidad_min) or not isfinite(potencia_sobrecarga)
+                or sensibilidad_min >= potencia_sobrecarga):
             raise TopologiaInvalidaError(
                 f"La ONT/ONU (id={ont.id}) no tiene configurados sus rangos de potencia."
             )
 
-        if sensibilidad_min <= potencia_recibida <= potencia_sobrecarga:
-            estado = "operativo"
-        else:
-            estado = "fuera_de_rango"
+        motivos = []
+        if longitud_total > ALCANCE_MAXIMO_GPON_KM:
+            motivos.append(f"El recorrido OLT–ONT suma {longitud_total:.6g} km y supera los {ALCANCE_MAXIMO_GPON_KM:g} km del perfil GPON.")
+        if potencia_recibida < sensibilidad_min:
+            motivos.append("Potencia recibida por debajo de la sensibilidad mínima.")
+        if potencia_recibida > potencia_sobrecarga:
+            motivos.append("Potencia recibida por encima del límite de sobrecarga del receptor.")
+        presupuesto = PRESUPUESTOS_OPTICOS_DB.get(olt.clase_potencia)
+        if presupuesto is not None and perdida_total > presupuesto:
+            motivos.append(f"Las pérdidas superan el presupuesto de {presupuesto:g} dB de clase {olt.clase_potencia}.")
+        estado = "fuera_de_rango" if motivos else "operativo"
 
         margen = potencia_recibida - sensibilidad_min
 
@@ -187,6 +262,9 @@ def calcular_resultados_opticos(db: Session, topologia_id: int) -> list[Resultad
                 potencia_recibida_dbm=round(potencia_recibida, 3),
                 margen_db=round(margen, 3),
                 estado_operativo=estado,
+                longitud_total_km=longitud_total,
+                margen_sobrecarga_db=round(potencia_sobrecarga - potencia_recibida, 3),
+                motivos=motivos,
             )
         )
 
@@ -204,7 +282,8 @@ def resultado_peor_caso(resultados: list[ResultadoEnlace]) -> ResultadoEnlace:
     2. Si todos están "operativo", se toma igualmente el de menor
        margen (el más cercano a quedar fuera de rango), como
        indicador de "cuello de botella" de la red diseñada.
+    El margen crítico es el menor entre sensibilidad y sobrecarga.
     """
     fuera_de_rango = [r for r in resultados if r.estado_operativo == "fuera_de_rango"]
     candidatos = fuera_de_rango if fuera_de_rango else resultados
-    return min(candidatos, key=lambda r: r.margen_db)
+    return min(candidatos, key=lambda r: min(r.margen_db, r.margen_sobrecarga_db))

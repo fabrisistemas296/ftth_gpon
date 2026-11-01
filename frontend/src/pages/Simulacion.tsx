@@ -4,13 +4,15 @@ import { BarraSuperior } from '../components/BarraSuperior';
 import { Aviso } from '../components/Aviso';
 import { Cargando } from '../components/Cargando';
 import { EstadoBadge } from '../components/EstadoBadge';
-import { escenariosApi, proyectosApi, simulacionesApi } from '../api/endpoints';
+import { escenariosApi, proyectosApi, simulacionesApi, topologiasApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import type { Escenario, ProyectoDetalle, TipoConsumo } from '../api/types';
 import { nombresComponentes } from '../editor/catalogo';
 import { revisarTopologia } from '../editor/validacion';
 import { CAPACIDAD_DOWNSTREAM_MBPS, CONSUMOS, UMBRAL_CONGESTION_PCT, consumo, fmt } from '../simulacion/trafico';
 import { formatoFecha } from '../utils';
+import { useViabilidad } from '../editor/useViabilidad';
+import { PanelViabilidad } from '../editor/PanelViabilidad';
 
 const msg = (e: unknown, def: string) => (e instanceof ApiError ? e.message : def);
 
@@ -66,6 +68,7 @@ export function Simulacion() {
   const componentes = useMemo(() => detalle?.topologia?.componentes ?? [], [detalle]);
   const conexiones = useMemo(() => detalle?.topologia?.conexiones ?? [], [detalle]);
   const nombres = useMemo(() => nombresComponentes(componentes), [componentes]);
+  const viabilidad = useViabilidad(detalle?.topologia?.id ?? null, componentes, conexiones);
   const errores = useMemo(
     () => revisarTopologia(componentes, conexiones, nombres).filter((p) => p.nivel === 'error'),
     [componentes, conexiones, nombres],
@@ -88,12 +91,23 @@ export function Simulacion() {
 
   const ejecutar = async () => {
     setErrorEjecucion(null);
+    if (!viabilidad.viable || !detalle?.topologia) {
+      setErrorEjecucion('La red debe ser viable antes de simular tráfico.');
+      return;
+    }
     if (!cantidadValida) {
       setErrorUsuarios('Ingresá una cantidad de usuarios entera y mayor a 0.');
       return;
     }
     setEjecutando(true);
     try {
+      // Refrescar desde la BD: la red puede haber cambiado en otra pestaña.
+      const actual = await topologiasApi.viabilidad(detalle.topologia.id);
+      if (actual.estado !== 'viable') {
+        setErrorEjecucion(actual.motivos.join(' '));
+        setDetalle(await proyectosApi.detalle(proyectoId));
+        return;
+      }
       const sim = await simulacionesApi.crear({
         proyecto_id: proyectoId,
         escenario_id: escenarioId,
@@ -243,6 +257,7 @@ export function Simulacion() {
         </div>
 
         <aside className="bloque resumen" aria-label="Resumen">
+          <PanelViabilidad evaluacion={viabilidad} nombres={nombres} />
           <h2>Resumen</h2>
           <dl className="datos">
             <div><dt>Escenario</dt><dd>{escenario?.nombre ?? 'Sin escenario'}</dd></div>
@@ -276,7 +291,7 @@ export function Simulacion() {
           ) : (
             <>
               {errorEjecucion && <Aviso>{errorEjecucion}</Aviso>}
-              <button type="button" className="btn btn--primario btn--grande" onClick={() => void ejecutar()} disabled={ejecutando}>
+              <button type="button" className="btn btn--primario btn--grande" onClick={() => void ejecutar()} disabled={ejecutando || !viabilidad.viable}>
                 {ejecutando ? 'Calculando…' : 'Ejecutar simulación'}
               </button>
             </>

@@ -1,7 +1,7 @@
 import { api } from './client';
 import type {
   Componente, Conexion, Escenario, LoginResponse, Proyecto, ProyectoDetalle, ProyectoInput, ResultadoCalculo,
-  Simulacion, SimulacionInput, Topologia, Usuario,
+  Simulacion, SimulacionInput, Topologia, Usuario, Viabilidad,
 } from './types';
 
 // Las rutas llevan la barra final tal como están declaradas en los
@@ -25,6 +25,8 @@ export const proyectosApi = {
 
 export const topologiasApi = {
   crear: (proyecto_id: number) => api<Topologia>('/topologias/', { method: 'POST', json: { proyecto_id } }),
+  viabilidad: (id: number, previa?: { componentes: Componente[]; conexiones: Conexion[] }) =>
+    api<Viabilidad>(`/topologias/${id}/viabilidad`, previa ? { method: 'POST', json: previa } : {}),
 };
 
 export type ComponenteInput = Omit<Componente, 'id'>;

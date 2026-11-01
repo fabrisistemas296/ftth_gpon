@@ -6,3 +6,6 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+.tools/
+.pytest_cache/
+*.tsbuildinfo

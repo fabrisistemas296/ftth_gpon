@@ -73,12 +73,15 @@ def db_session():
 
 
 @pytest.fixture()
-def client(db_session):
+def client(db_session, monkeypatch):
     """Cliente HTTP de test, con get_db sobreescrito para usar la BD de test."""
     def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
+    # El lifespan usa SessionLocal directamente: no debe inicializar la BD real
+    # cuando TestClient arranca la aplicación. La fixture ya creó la de prueba.
+    monkeypatch.setattr("app.main.inicializar_base", lambda: None)
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

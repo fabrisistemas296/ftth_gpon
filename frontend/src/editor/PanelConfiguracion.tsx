@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { Componente } from '../api/types';
 import type { ComponenteInput } from '../api/endpoints';
 import { Aviso } from '../components/Aviso';
-import { CLASES_POTENCIA, DESCRIPCION, ETIQUETA, PERDIDA_CONECTOR_DB, PERDIDA_EMPALME_DB, PERDIDAS_SPLITTER_DB, RELACIONES, aInput, num, perdidaFibra } from './catalogo';
+import { ALCANCE_MAXIMO_GPON_KM, CLASES_POTENCIA, DESCRIPCION, ETIQUETA, PERDIDA_CONECTOR_DB, PERDIDA_EMPALME_DB, PERDIDAS_SPLITTER_DB, RELACIONES, aInput, num, perdidaFibra } from './catalogo';
 
 type Valores = Record<string, string>;
 
@@ -33,7 +33,7 @@ function construir(c: Componente, v: Valores): { datos?: ComponenteInput; errore
   const datos = aInput(c);
   const rango = (campo: keyof ComponenteInput, min: number, max: number, entero = false) => {
     const n = aNumero(v[campo as string]);
-    if (Number.isNaN(n)) errores[campo as string] = 'Ingresá un número.';
+    if (!Number.isFinite(n)) errores[campo as string] = 'Ingresá un número finito.';
     else if (entero && !Number.isInteger(n)) errores[campo as string] = 'Debe ser un número entero.';
     else if (n < min || n > max) errores[campo as string] = `Debe estar entre ${num(min, entero ? 0 : 2)} y ${num(max, entero ? 0 : 2)}.`;
     return n;
@@ -45,7 +45,7 @@ function construir(c: Componente, v: Valores): { datos?: ComponenteInput; errore
       datos.clase_potencia = v.clase_potencia;
       break;
     case 'FIBRA': {
-      const lon = rango('longitud_km', 0, 100);
+      const lon = rango('longitud_km', 0, ALCANCE_MAXIMO_GPON_KM);
       if (!errores.longitud_km && lon === 0) errores.longitud_km = 'La longitud debe ser mayor a 0.';
       datos.longitud_km = lon;
       datos.atenuacion_db_km = rango('atenuacion_db_km', 0, 2);
@@ -75,9 +75,10 @@ interface Props {
   soloLectura?: boolean;
   onAplicar: (datos: ComponenteInput) => Promise<void>;
   onEliminar: () => void;
+  onPrevisualizar?: (id: number, datos: ComponenteInput | null, sucio: boolean) => void;
 }
 
-export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplicar, onEliminar }: Props) {
+export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplicar, onEliminar, onPrevisualizar }: Props) {
   const [v, setV] = useState<Valores>(() => valoresIniciales(c));
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [errorApi, setErrorApi] = useState<string | null>(null);
@@ -102,6 +103,11 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
   }, [guardado]);
 
   const sucio = Object.keys(v).some((k) => v[k] !== iniciales[k]);
+  useEffect(() => {
+    onPrevisualizar?.(c.id, construir(c, v).datos ?? null, sucio);
+  }, [c, v, sucio, onPrevisualizar]);
+
+  const erroresActuales = construir(c, v).errores;
   const set = (campo: string) => (e: { target: { value: string } }) => {
     setV((x) => ({ ...x, [campo]: e.target.value }));
     setErrores((x) => ({ ...x, [campo]: '' }));
@@ -124,17 +130,20 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
     }
   };
 
-  const campoNum = (campo: string, etiqueta: string, unidad?: string, ayuda?: string) => (
+  const campoNum = (campo: string, etiqueta: string, unidad?: string, ayuda?: string) => {
+    const error = erroresActuales[campo] || errores[campo];
+    return (
     <div className="campo">
       <label htmlFor={`cfg-${campo}`}>{etiqueta}</label>
-      <div className={`input-unidad${errores[campo] ? ' input-unidad--error' : ''}`}>
+      <div className={`input-unidad${error ? ' input-unidad--error' : ''}`}>
         <input id={`cfg-${campo}`} inputMode="decimal" value={v[campo]} onChange={set(campo)} disabled={soloLectura}
-          aria-invalid={!!errores[campo]} aria-describedby={errores[campo] ? `err-${campo}` : undefined} />
+          aria-invalid={!!error} aria-describedby={error ? `err-${campo}` : undefined} />
         {unidad && <span>{unidad}</span>}
       </div>
-      {errores[campo] ? <span id={`err-${campo}`} className="campo__error">{errores[campo]}</span> : ayuda && <span className="campo__ayuda">{ayuda}</span>}
+      {error ? <span id={`err-${campo}`} className="campo__error">{error}</span> : ayuda && <span className="campo__ayuda">{ayuda}</span>}
     </div>
-  );
+    );
+  };
 
   const previaFibra = c.tipo === 'FIBRA'
     ? perdidaFibra({
@@ -167,7 +176,7 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
 
       {c.tipo === 'FIBRA' && (
         <>
-          {campoNum('longitud_km', 'Longitud', 'km')}
+          {campoNum('longitud_km', 'Longitud', 'km', 'Máximo 20 km sumando todos los tramos del recorrido OLT–ONT.')}
           {campoNum('atenuacion_db_km', 'Atenuación', 'dB/km', 'Típico en 1490/1550 nm: 0,25 a 0,30 dB/km.')}
           <div className="dos-columnas">
             {campoNum('cantidad_conectores', 'Conectores')}

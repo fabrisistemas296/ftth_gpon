@@ -124,3 +124,19 @@ export interface ResultadoCalculo {
   resultado_optico: ResultadoOptico;
   resultado_trafico: ResultadoTrafico;
 }
+
+export interface Viabilidad {
+  estado: 'viable' | 'no_viable' | 'incompleta';
+  alcance_maximo_km: number;
+  motivos: string[];
+  enlaces: {
+    ont_id: number;
+    longitud_total_km: number;
+    perdida_total_db: number;
+    potencia_recibida_dbm: number;
+    margen_db: number;
+    margen_sobrecarga_db: number;
+    estado_operativo: string;
+    motivos: string[];
+  }[];
+}

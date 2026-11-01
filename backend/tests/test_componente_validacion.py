@@ -77,3 +77,19 @@ def test_fibra_sin_longitud_es_rechazada():
 def test_splitter_con_relacion_no_soportada_es_rechazado():
     with pytest.raises(ValidationError):
         ComponenteCreate(**BASE, tipo="SPLITTER", relacion_division="1:128")
+
+
+@pytest.mark.parametrize("campo,valor", [
+    ("longitud_km", float("nan")), ("longitud_km", float("inf")),
+    ("atenuacion_db_km", -0.1), ("cantidad_conectores", -1), ("cantidad_empalmes", -1),
+])
+def test_parametros_no_fisicos_de_fibra_son_rechazados(campo, valor):
+    datos = dict(BASE, tipo="FIBRA", longitud_km=8, atenuacion_db_km=0.28)
+    datos[campo] = valor
+    with pytest.raises(ValidationError):
+        ComponenteCreate(**datos)
+
+
+def test_ont_con_ventana_de_recepcion_invertida_es_rechazada():
+    with pytest.raises(ValidationError):
+        ComponenteCreate(**BASE, tipo="ONT_ONU", sensibilidad_min_dbm=-8, potencia_sobrecarga_dbm=-28)

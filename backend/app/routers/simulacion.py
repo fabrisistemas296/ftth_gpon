@@ -165,6 +165,13 @@ def calcular_simulacion(
     except TopologiaInvalidaError as e:
         raise HTTPException(status_code=422, detail=f"Topología inválida: {e}")
 
+    # El tráfico presupone enlaces físicos operativos. Se vuelve a comprobar
+    # en el servidor con los datos guardados, aunque el cliente haya visto una previa.
+    no_viables = [r for r in resultados_enlaces if r.estado_operativo != "operativo"]
+    if no_viables:
+        motivos = [f"ONT/ONU {r.ont_id}: {m}" for r in no_viables for m in r.motivos]
+        raise HTTPException(status_code=422, detail="La red no es viable para simular tráfico. " + " ".join(motivos))
+
     # --- Cálculo de tráfico ---
     try:
         resultado_trafico_calc = calcular_resultado_trafico(

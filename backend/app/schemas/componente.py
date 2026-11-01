@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.constantes import ALCANCE_MAXIMO_GPON_KM
 
 
 # Campos propios de cada tipo de componente. Se usa para validar que
@@ -30,6 +32,8 @@ TODOS_LOS_CAMPOS_ESPECIFICOS = {
 
 
 class ComponenteCreate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     topologia_id: int
 
     tipo: Literal["OLT", "FIBRA", "SPLITTER", "ONT_ONU"]
@@ -37,14 +41,14 @@ class ComponenteCreate(BaseModel):
     posicion_x: float
     posicion_y: float
 
-    potencia_tx_dbm: float | None = None
+    potencia_tx_dbm: float | None = Field(default=None, ge=-10, le=15)
     clase_potencia: Literal["B+", "C+"] | None = None
 
-    longitud_km: float | None = None
-    atenuacion_db_km: float | None = None
+    longitud_km: float | None = Field(default=None, gt=0, le=ALCANCE_MAXIMO_GPON_KM)
+    atenuacion_db_km: float | None = Field(default=None, ge=0, le=2)
 
-    cantidad_conectores: int | None = None
-    cantidad_empalmes: int | None = None
+    cantidad_conectores: int | None = Field(default=None, ge=0, le=50)
+    cantidad_empalmes: int | None = Field(default=None, ge=0, le=100)
 
     relacion_division: Literal[
         "1:2",
@@ -55,8 +59,8 @@ class ComponenteCreate(BaseModel):
         "1:64"
     ] | None = None
 
-    sensibilidad_min_dbm: float | None = None
-    potencia_sobrecarga_dbm: float | None = None
+    sensibilidad_min_dbm: float | None = Field(default=None, ge=-45, le=0)
+    potencia_sobrecarga_dbm: float | None = Field(default=None, ge=-45, le=10)
 
     @model_validator(mode="after")
     def _validar_campos_segun_tipo(self):
@@ -93,6 +97,9 @@ class ComponenteCreate(BaseModel):
                 self.cantidad_conectores = 0
             if self.cantidad_empalmes is None:
                 self.cantidad_empalmes = 0
+
+        if self.tipo == "ONT_ONU" and self.sensibilidad_min_dbm >= self.potencia_sobrecarga_dbm:
+            raise ValueError("La potencia de sobrecarga debe ser mayor que la sensibilidad mínima.")
 
         return self
 

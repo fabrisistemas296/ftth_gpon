@@ -20,6 +20,11 @@ PERDIDA_EMPALME_DB = 0.1        # dB por empalme de fusión
 # ------------------------------------------------------------------
 ATENUACION_FIBRA_DEFAULT_DB_KM = 0.28
 
+# Perfil GPON convencional del simulador (ITU-T G.984.1/G.984.2).
+# Se aplica al recorrido completo OLT–ONT, no a la suma de las ramas.
+ALCANCE_MAXIMO_GPON_KM = 20.0
+PRESUPUESTOS_OPTICOS_DB = {"B+": 28.0, "C+": 32.0}
+
 # ------------------------------------------------------------------
 # Pérdida de inserción por relación de división del splitter
 # (valores reales típicos, incluyen excess loss - ITU-T G.671)

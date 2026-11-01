@@ -29,6 +29,8 @@ import { Paleta, TIPO_DND } from '../editor/Paleta';
 import { aInput, componenteVacio, nombresComponentes } from '../editor/catalogo';
 import { revisarTopologia, validarConexion } from '../editor/validacion';
 import { construirAristas } from '../editor/aristas';
+import { useViabilidad } from '../editor/useViabilidad';
+import { PanelViabilidad } from '../editor/PanelViabilidad';
 
 const tiposNodo = { componente: NodoComponente };
 const msg = (e: unknown, def: string) => (e instanceof ApiError || e instanceof Error ? e.message : def);
@@ -69,6 +71,18 @@ function EditorInterno() {
 
   const nombres = useMemo(() => nombresComponentes(componentes), [componentes]);
   const problemas = useMemo(() => revisarTopologia(componentes, conexiones, nombres), [componentes, conexiones, nombres]);
+  const [borrador, setBorrador] = useState<{ id: number; datos: ComponenteInput | null; sucio: boolean } | null>(null);
+  const previsualizar = useCallback((id: number, datos: ComponenteInput | null, sucio: boolean) => {
+    const siguiente = { id, datos, sucio };
+    setBorrador((prev) => JSON.stringify(prev) === JSON.stringify(siguiente) ? prev : siguiente);
+  }, []);
+  const seleccionados = nodes.filter((n) => n.selected);
+  const borradorActivo = !!(borrador?.sucio && seleccionados.length === 1 && aristasSel.size === 0 && seleccionados[0].id === String(borrador.id));
+  const componentesPrevios = borradorActivo && borrador?.datos
+    ? componentes.map((c) => c.id === borrador.id ? { ...borrador.datos!, id: c.id } : c)
+    : componentes;
+  const viabilidad = useViabilidad(topologiaId, componentesPrevios, conexiones,
+    borradorActivo && !borrador?.datos ? 'Revisá los parámetros del componente para calcular la viabilidad.' : null);
 
   // Envuelve cada llamada a la API para mostrar el estado "Guardando…" y los errores.
   const conGuardado = useCallback(async <T,>(fn: () => Promise<T>, error: string): Promise<T | undefined> => {
@@ -356,7 +370,9 @@ function EditorInterno() {
           </>
         }
         acciones={
-          <button type="button" className="btn btn--claro" onClick={() => navigate(`/proyectos/${proyectoId}/simulacion`)}>
+          <button type="button" className="btn btn--claro" onClick={() => navigate(`/proyectos/${proyectoId}/simulacion`)}
+            disabled={!viabilidad.viable || pendientes > 0 || borradorActivo}
+            title={borradorActivo ? 'Aplicá los cambios antes de continuar.' : 'La red debe ser viable antes de simular tráfico.'}>
             Configurar simulación
           </button>
         }
@@ -404,10 +420,12 @@ function EditorInterno() {
         <aside className="lateral">
           {seleccionado ? (
             <PanelConfiguracion
+              key={seleccionado.id}
               componente={seleccionado}
               nombre={nombres[seleccionado.id]}
               onAplicar={(datos) => aplicarConfiguracion(seleccionado, datos)}
               onEliminar={() => void eliminar([String(seleccionado.id)], [])}
+              onPrevisualizar={previsualizar}
             />
           ) : aristaSel ? (
             <div className="panel">
@@ -426,7 +444,7 @@ function EditorInterno() {
             <div className="panel">
               <div className="panel__cab">
                 <span className="panel__tipo">Revisión de la topología</span>
-                <h2>{errores.length === 0 && componentes.length > 0 ? 'Lista para simular' : 'Pendiente'}</h2>
+                <h2>{errores.length === 0 && componentes.length > 0 ? 'Conectividad revisada' : 'Pendiente'}</h2>
               </div>
               {seleccion.nodos.length + seleccion.aristas.length > 1 ? (
                 <>
@@ -449,6 +467,7 @@ function EditorInterno() {
               )}
             </div>
           )}
+          <PanelViabilidad evaluacion={viabilidad} nombres={nombres} borrador={borradorActivo} />
         </aside>
       </div>
     </div>

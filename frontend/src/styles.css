@@ -407,6 +407,11 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--borde-i
 }
 
 /* ---------- Vistas del profesor ---------- */
+.viabilidad { border-top: 1px solid var(--borde); }
+.viabilidad .previa { font-size: 12px; }
+.viabilidad .previa > div { gap: 8px; }
+.viabilidad .previa > div > span:last-child { white-space: nowrap; }
+
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 .pestanas { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin-bottom: -8px; }
 .pestana { padding: 10px 14px; font-size: 14px; font-weight: 500; color: var(--tinta-suave); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }

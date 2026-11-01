@@ -6,6 +6,7 @@ import type { ComponenteInput } from '../api/endpoints';
 // oficial lo hace siempre el servidor.
 export const PERDIDA_CONECTOR_DB = 0.4;
 export const PERDIDA_EMPALME_DB = 0.1;
+export const ALCANCE_MAXIMO_GPON_KM = 20;
 export const PERDIDAS_SPLITTER_DB: Record<string, number> = {
   '1:2': 3.5, '1:4': 7.0, '1:8': 10.5, '1:16': 14.0, '1:32': 17.5, '1:64': 21.0,
 };

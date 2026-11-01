@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.deps import get_usuario_actual, requerir_rol_alumno
-from app.models.models import Topologia, Proyecto, Usuario
+from app.models.models import Topologia, Proyecto, Usuario, Componente, Conexion
 from app.schemas.topologia import TopologiaCreate, TopologiaResponse
+from app.schemas.viabilidad import TopologiaPrevia, ViabilidadResponse
+from app.services.viabilidad import evaluar_viabilidad
 
 
 router = APIRouter(
@@ -94,3 +96,36 @@ def eliminar_topologia(
     db.commit()
 
     return topologia
+
+
+@router.get("/{topologia_id}/viabilidad", response_model=ViabilidadResponse)
+def obtener_viabilidad(
+    topologia_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    topologia = db.get(Topologia, topologia_id)
+    if not topologia:
+        raise HTTPException(status_code=404, detail="Topología no encontrada")
+    _verificar_acceso_topologia(topologia, usuario, db)
+    return evaluar_viabilidad(
+        db.query(Componente).filter_by(topologia_id=topologia_id).all(),
+        db.query(Conexion).filter_by(topologia_id=topologia_id).all(),
+    )
+
+
+@router.post("/{topologia_id}/viabilidad", response_model=ViabilidadResponse)
+def previsualizar_viabilidad(
+    topologia_id: int,
+    datos: TopologiaPrevia,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    """Evalúa cambios del formulario sin guardar ni crear una simulación."""
+    topologia = db.get(Topologia, topologia_id)
+    if not topologia:
+        raise HTTPException(status_code=404, detail="Topología no encontrada")
+    _verificar_acceso_topologia(topologia, usuario, db)
+    if any(c.topologia_id != topologia_id for c in [*datos.componentes, *datos.conexiones]):
+        raise HTTPException(status_code=422, detail="Los elementos deben pertenecer a la topología indicada")
+    return evaluar_viabilidad(datos.componentes, datos.conexiones)

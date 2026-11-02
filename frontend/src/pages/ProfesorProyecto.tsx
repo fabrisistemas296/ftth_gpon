@@ -7,9 +7,9 @@ import { BarraSuperior } from '../components/BarraSuperior';
 import { Aviso } from '../components/Aviso';
 import { Cargando } from '../components/Cargando';
 import { EstadoBadge } from '../components/EstadoBadge';
-import { escenariosApi, proyectosApi, usuariosApi } from '../api/endpoints';
+import { proyectosApi, usuariosApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
-import type { Escenario, ProyectoDetalle, Usuario } from '../api/types';
+import type { ProyectoDetalle, Usuario } from '../api/types';
 import { NodoComponente, type NodoFlow } from '../editor/NodoComponente';
 import { PanelConfiguracion } from '../editor/PanelConfiguracion';
 import { nombresComponentes } from '../editor/catalogo';
@@ -26,7 +26,6 @@ export function ProfesorProyecto() {
 
   const [detalle, setDetalle] = useState<ProyectoDetalle | null>(null);
   const [alumno, setAlumno] = useState<Usuario | null>(null);
-  const [escenarios, setEscenarios] = useState<Escenario[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<NodoFlow>([]);
@@ -40,7 +39,6 @@ export function ProfesorProyecto() {
         const nombres = nombresComponentes(comps);
         setNodes(comps.map((c) => ({ id: String(c.id), type: 'componente', position: { x: c.posicion_x, y: c.posicion_y }, data: { componente: c, nombre: nombres[c.id] } })));
         usuariosApi.listar().then((us) => setAlumno(us.find((u) => u.id === d.usuario_id) ?? null)).catch(() => undefined);
-        escenariosApi.listar().then(setEscenarios).catch(() => undefined);
       } catch (e) {
         setError(e instanceof ApiError ? e.message : 'No se pudo cargar el proyecto.');
       } finally {
@@ -169,7 +167,6 @@ export function ProfesorProyecto() {
                 <thead>
                   <tr>
                     <th scope="col">Fecha</th>
-                    <th scope="col">Escenario</th>
                     <th scope="col">Usuarios · consumo</th>
                     <th scope="col">Pérdida</th>
                     <th scope="col">Potencia</th>
@@ -185,7 +182,6 @@ export function ProfesorProyecto() {
                     return (
                       <tr key={s.id}>
                         <td className="mono texto-suave">{formatoFecha(s.fecha_ejecucion)}</td>
-                        <td>{escenarios.find((e) => e.id === s.escenario_id)?.nombre ?? 'Sin escenario'}</td>
                         <td>{s.cantidad_usuarios} · {consumo(s.tipo_consumo).nombre.toLowerCase()}</td>
                         <td className="mono">{ro ? `${fmt(ro.perdida_total_db)} dB` : '—'}</td>
                         <td className="mono">{ro ? `${fmt(ro.potencia_recibida_dbm)} dBm` : '—'}</td>

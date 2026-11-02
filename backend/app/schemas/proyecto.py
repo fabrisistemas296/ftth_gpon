@@ -14,8 +14,17 @@ class ProyectoCreate(ProyectoBase):
 class ProyectoResponse(ProyectoBase):
     id: int
     usuario_id: int
+    publicado: bool = False
     fecha_creacion: str
     fecha_modificacion: str
 
     class Config:
         from_attributes = True
+
+
+class PublicacionProyecto(BaseModel):
+    publicado: bool
+
+
+class ProyectoPublicadoResponse(ProyectoResponse):
+    autor: str

@@ -17,6 +17,7 @@ class EnlaceViabilidad(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     ont_id: int
+    cantidad_onts: int = 1
     longitud_total_km: float
     perdida_total_db: float
     potencia_recibida_dbm: float
@@ -31,3 +32,4 @@ class ViabilidadResponse(BaseModel):
     alcance_maximo_km: float = ALCANCE_MAXIMO_GPON_KM
     motivos: list[str]
     enlaces: list[EnlaceViabilidad]
+    cantidad_onts: int = 0

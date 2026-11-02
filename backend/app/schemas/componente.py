@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.constantes import ALCANCE_MAXIMO_GPON_KM
+from app.core.componentes import TIPOS_LOTE, tipo_base, tiene_fibra
 
 
 # Campos propios de cada tipo de componente. Se usa para validar que
@@ -36,7 +37,8 @@ class ComponenteCreate(BaseModel):
 
     topologia_id: int
 
-    tipo: Literal["OLT", "FIBRA", "SPLITTER", "ONT_ONU"]
+    tipo: Literal["OLT", "FIBRA", "SPLITTER", "ONT_ONU", "LOTE_FIBRA_ONT"]
+    cantidad: int = Field(default=1, gt=0, le=2147483647, strict=True)
 
     posicion_x: float
     posicion_y: float
@@ -64,8 +66,15 @@ class ComponenteCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validar_campos_segun_tipo(self):
-        campos_permitidos = CAMPOS_POR_TIPO[self.tipo]
-        campos_obligatorios = CAMPOS_OBLIGATORIOS_POR_TIPO[self.tipo]
+        base = tipo_base(self.tipo)
+        campos_permitidos = CAMPOS_POR_TIPO[base]
+        campos_obligatorios = CAMPOS_OBLIGATORIOS_POR_TIPO[base]
+        if self.tipo == "LOTE_FIBRA_ONT":
+            campos_permitidos = campos_permitidos | CAMPOS_POR_TIPO["FIBRA"]
+            campos_obligatorios = campos_obligatorios | CAMPOS_OBLIGATORIOS_POR_TIPO["FIBRA"]
+
+        if self.tipo not in TIPOS_LOTE and self.cantidad != 1:
+            raise ValueError("La cantidad de un componente individual debe ser 1. Usá un lote para agrupar elementos.")
 
         # 1. Ningún campo de OTRO tipo puede venir cargado (no None)
         campos_no_permitidos_cargados = [
@@ -92,13 +101,13 @@ class ComponenteCreate(BaseModel):
 
         # 3. cantidad_conectores/cantidad_empalmes en FIBRA: si no se
         # especifican, se asumen 0 en vez de exigirlos como obligatorios
-        if self.tipo == "FIBRA":
+        if tiene_fibra(self.tipo):
             if self.cantidad_conectores is None:
                 self.cantidad_conectores = 0
             if self.cantidad_empalmes is None:
                 self.cantidad_empalmes = 0
 
-        if self.tipo == "ONT_ONU" and self.sensibilidad_min_dbm >= self.potencia_sobrecarga_dbm:
+        if base == "ONT_ONU" and self.sensibilidad_min_dbm >= self.potencia_sobrecarga_dbm:
             raise ValueError("La potencia de sobrecarga debe ser mayor que la sensibilidad mínima.")
 
         return self
@@ -109,6 +118,7 @@ class ComponenteResponse(BaseModel):
     topologia_id: int
 
     tipo: str
+    cantidad: int = 1
 
     posicion_x: float
     posicion_y: float

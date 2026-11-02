@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.core.deps import get_usuario_actual, requerir_rol_alumno, requerir_rol_profesor
 from app.models.models import (
     Proyecto,
     Topologia,
@@ -14,7 +14,7 @@ from app.models.models import (
     ResultadoTrafico,
     Usuario,
 )
-from app.schemas.proyecto import ProyectoCreate, ProyectoResponse
+from app.schemas.proyecto import ProyectoCreate, ProyectoResponse, PublicacionProyecto, ProyectoPublicadoResponse
 from app.schemas.proyecto_detalle import (
     ProyectoDetalleResponse,
     TopologiaDetalleResponse,
@@ -41,6 +41,7 @@ def _verificar_acceso_proyecto(proyecto: Proyecto, usuario: Usuario):
 
 @router.get("/", response_model=list[ProyectoResponse])
 def obtener_proyectos(
+    propios: bool = False,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_usuario_actual),
 ):
@@ -48,8 +49,8 @@ def obtener_proyectos(
     Alumno: ve solo sus propios proyectos.
     Profesor: ve los proyectos de todos los alumnos (RF-06).
     """
-    if usuario.rol == "profesor":
-        return db.query(Proyecto).all()
+    if usuario.rol == "profesor" and not propios:
+        return db.query(Proyecto).join(Usuario, Proyecto.usuario_id == Usuario.id).filter(Usuario.rol == "alumno").all()
 
     return db.query(Proyecto).filter(Proyecto.usuario_id == usuario.id).all()
 
@@ -58,7 +59,7 @@ def obtener_proyectos(
 def crear_proyecto(
     proyecto: ProyectoCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),  # solo alumnos crean proyectos
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     nuevo_proyecto = Proyecto(
         nombre=proyecto.nombre,
@@ -71,6 +72,82 @@ def crear_proyecto(
     db.refresh(nuevo_proyecto)
 
     return nuevo_proyecto
+
+
+@router.get("/publicados", response_model=list[ProyectoPublicadoResponse])
+def listar_proyectos_publicados(
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(get_usuario_actual),
+):
+    proyectos = db.query(Proyecto, Usuario.nombre).join(Usuario, Proyecto.usuario_id == Usuario.id).filter(
+        Proyecto.publicado.is_(True), Usuario.rol == "profesor",
+    ).order_by(Proyecto.fecha_modificacion.desc(), Proyecto.id.desc()).all()
+    return [ProyectoPublicadoResponse(**ProyectoResponse.model_validate(p).model_dump(), autor=nombre)
+            for p, nombre in proyectos]
+
+
+@router.put("/{proyecto_id}/publicacion", response_model=ProyectoResponse)
+def cambiar_publicacion(
+    proyecto_id: int,
+    datos: PublicacionProyecto,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requerir_rol_profesor),
+):
+    proyecto = db.get(Proyecto, proyecto_id)
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    if proyecto.usuario_id != usuario.id:
+        raise HTTPException(status_code=403, detail="Sólo podés publicar o retirar tus propios proyectos")
+    proyecto.publicado = datos.publicado
+    proyecto.fecha_modificacion = datetime.now(timezone.utc).isoformat(sep=" ", timespec="seconds")
+    db.commit()
+    db.refresh(proyecto)
+    return proyecto
+
+
+@router.post("/{proyecto_id}/copiar", response_model=ProyectoResponse)
+def copiar_proyecto_publicado(
+    proyecto_id: int,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(requerir_rol_alumno),
+):
+    origen = db.query(Proyecto).join(Usuario, Proyecto.usuario_id == Usuario.id).filter(
+        Proyecto.id == proyecto_id, Proyecto.publicado.is_(True), Usuario.rol == "profesor",
+    ).first()
+    if not origen:
+        raise HTTPException(status_code=404, detail="El proyecto no está publicado o ya no está disponible")
+
+    try:
+        copia = Proyecto(nombre=f"{origen.nombre} (copia)", descripcion=origen.descripcion,
+                         usuario_id=usuario.id, publicado=False)
+        db.add(copia)
+        db.flush()
+        topologia = Topologia(proyecto_id=copia.id)
+        db.add(topologia)
+        db.flush()
+        topologia_origen = db.query(Topologia).filter_by(proyecto_id=origen.id).first()
+        if topologia_origen:
+            componentes = db.query(Componente).filter_by(topologia_id=topologia_origen.id).all()
+            copias = {}
+            for componente in componentes:
+                valores = {c.name: getattr(componente, c.name) for c in Componente.__table__.columns
+                           if c.name not in {"id", "topologia_id"}}
+                nuevo = Componente(topologia_id=topologia.id, **valores)
+                db.add(nuevo)
+                copias[componente.id] = nuevo
+            db.flush()
+            for conexion in db.query(Conexion).filter_by(topologia_id=topologia_origen.id).all():
+                if conexion.componente_origen_id not in copias or conexion.componente_destino_id not in copias:
+                    raise HTTPException(status_code=409, detail="El proyecto publicado tiene una conexión inconsistente")
+                db.add(Conexion(topologia_id=topologia.id,
+                                componente_origen_id=copias[conexion.componente_origen_id].id,
+                                componente_destino_id=copias[conexion.componente_destino_id].id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(copia)
+    return copia
 
 
 @router.get("/{proyecto_id}", response_model=ProyectoResponse)
@@ -155,6 +232,7 @@ def obtener_detalle_proyecto(
         nombre=proyecto.nombre,
         descripcion=proyecto.descripcion,
         usuario_id=proyecto.usuario_id,
+        publicado=proyecto.publicado,
         fecha_creacion=proyecto.fecha_creacion,
         fecha_modificacion=proyecto.fecha_modificacion,
         topologia=topologia_detalle,
@@ -167,7 +245,7 @@ def actualizar_proyecto(
     proyecto_id: int,
     proyecto_data: ProyectoCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),  # profesores no editan (solo lectura)
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     proyecto_existente = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
     if not proyecto_existente:
@@ -196,7 +274,7 @@ def actualizar_proyecto(
 def eliminar_proyecto(
     proyecto_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
     if not proyecto:

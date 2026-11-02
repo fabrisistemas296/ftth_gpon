@@ -12,9 +12,10 @@ def test_alumno_puede_crear_proyecto(client, alumno_headers):
     assert r.json()["nombre"] == "Mi proyecto"
 
 
-def test_profesor_no_puede_crear_proyecto(client, profesor_headers):
+def test_profesor_puede_crear_sus_propios_proyectos(client, profesor_headers):
     r = client.post("/proyectos/", json={"nombre": "Proyecto de profesor"}, headers=profesor_headers)
-    assert r.status_code == 403
+    assert r.status_code == 200
+    assert r.json()["publicado"] is False
 
 
 def test_alumno_no_puede_ver_proyecto_de_otro_alumno(client, alumno_headers, otro_alumno_headers):

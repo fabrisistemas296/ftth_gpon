@@ -18,6 +18,7 @@ from math import isfinite, fsum
 from sqlalchemy.orm import Session
 
 from app.models.models import Componente, Conexion
+from app.core.componentes import TIPOS_LOTE, cantidad_de, tipo_base, tiene_fibra
 from app.core.constantes import (
     PERDIDA_CONECTOR_DB,
     PERDIDA_EMPALME_DB,
@@ -43,6 +44,7 @@ class ResultadoEnlace:
     longitud_total_km: float
     margen_sobrecarga_db: float
     motivos: list[str] = field(default_factory=list)
+    cantidad_onts: int = 1
 
 
 # ------------------------------------------------------------------
@@ -51,10 +53,10 @@ class ResultadoEnlace:
 def perdida_de_componente(componente: Componente) -> float:
     """
     Devuelve la pérdida en dB introducida por un componente puntual.
-    OLT y ONT/ONU no introducen pérdida propia (son los extremos del
-    enlace); solo Fibra y Splitter aportan pérdida.
+    El bloque fibra + ONT aporta la pérdida de su cable por cada recorrido,
+    independientemente de cuántos pares idénticos represente.
     """
-    if componente.tipo == "FIBRA":
+    if tiene_fibra(componente.tipo):
         atenuacion = componente.atenuacion_db_km or 0.0
         longitud = componente.longitud_km or 0.0
         conectores = componente.cantidad_conectores or 0
@@ -154,7 +156,7 @@ def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) 
     Los datos históricos se validan aquí: no se asumen válidos por estar guardados.
     """
     olts = [c for c in componentes if c.tipo == "OLT"]
-    onts = [c for c in componentes if c.tipo == "ONT_ONU"]
+    onts = [c for c in componentes if tipo_base(c.tipo) == "ONT_ONU"]
 
     if len(olts) != 1:
         raise TopologiaInvalidaError(
@@ -184,14 +186,20 @@ def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) 
             cola.append(vecino)
 
     for c in componentes:
-        if c.tipo not in {"OLT", "FIBRA", "SPLITTER", "ONT_ONU"}:
+        if c.tipo not in {"OLT", "FIBRA", "SPLITTER", "ONT_ONU", *TIPOS_LOTE}:
             raise TopologiaInvalidaError(f"Tipo de componente no soportado (id={c.id}).")
+        cantidad = cantidad_de(c)
+        if isinstance(cantidad, bool) or not isinstance(cantidad, int) or not 1 <= cantidad <= 2147483647:
+            raise TopologiaInvalidaError(f"El componente (id={c.id}) debe tener una cantidad entera mayor que cero.")
+        if c.tipo not in TIPOS_LOTE and cantidad != 1:
+            raise TopologiaInvalidaError(f"El componente individual (id={c.id}) debe tener cantidad 1.")
         if c.id not in padres:
             raise TopologiaInvalidaError(f"El componente (id={c.id}) no está conectado a la OLT.")
         grado = len(grafo[c.id])
         if c.tipo == "FIBRA":
             if grado != 2:
                 raise TopologiaInvalidaError(f"La fibra (id={c.id}) debe conectar dos extremos; la división requiere un splitter.")
+        if tiene_fibra(c.tipo):
             if (c.longitud_km is None or not isfinite(c.longitud_km) or c.longitud_km <= 0
                     or c.atenuacion_db_km is None or not isfinite(c.atenuacion_db_km)
                     or not 0 <= c.atenuacion_db_km <= 2):
@@ -200,12 +208,22 @@ def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) 
                 valor = getattr(c, campo)
                 if valor is not None and (not isfinite(valor) or int(valor) != valor or not 0 <= valor <= maximo):
                     raise TopologiaInvalidaError(f"La fibra (id={c.id}) tiene {campo} inválida.")
-        if c.tipo == "ONT_ONU" and grado != 1:
+        if tipo_base(c.tipo) == "ONT_ONU" and grado != 1:
             raise TopologiaInvalidaError(f"La ONT/ONU (id={c.id}) debe tener un único enlace y no puede actuar como tránsito.")
+        if c.tipo == "LOTE_FIBRA_ONT" and cantidad > 1:
+            padre = componentes_por_id[padres[c.id]]
+            if padre.tipo != "SPLITTER":
+                raise TopologiaInvalidaError(
+                    f"El lote fibra + ONT (id={c.id}) representa {cantidad} pares y debe conectarse "
+                    "a un splitter con esa cantidad de salidas disponibles. Una fibra individual no puede dividir la señal."
+                )
         if c.tipo == "SPLITTER":
             perdida_de_componente(c)  # valida la relación antes de interpretarla
-            if grado - 1 > int(c.relacion_division.split(":")[1]):
-                raise TopologiaInvalidaError(f"El splitter (id={c.id}) excede sus salidas {c.relacion_division}.")
+            ocupadas = sum(cantidad_de(componentes_por_id[v]) for v in grafo[c.id] if v != padres[c.id])
+            if ocupadas > int(c.relacion_division.split(":")[1]):
+                raise TopologiaInvalidaError(
+                    f"El splitter (id={c.id}) solicita {ocupadas} salidas y excede sus salidas {c.relacion_division}."
+                )
 
     resultados: list[ResultadoEnlace] = []
 
@@ -216,14 +234,14 @@ def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) 
                 f"La ONT/ONU (id={ont.id}) no está conectada a la OLT."
             )
 
-        # Se excluyen los dos extremos (OLT y ONT), que no introducen pérdida propia
+        # La ONT individual aporta cero; el bloque terminal incluye su fibra.
         perdida_total = sum(
             perdida_de_componente(componentes_por_id[cid])
-            for cid in camino[1:-1]
+            for cid in camino[1:]
         )
         longitud_total = fsum(
             componentes_por_id[cid].longitud_km
-            for cid in camino[1:-1] if componentes_por_id[cid].tipo == "FIBRA"
+            for cid in camino[1:] if tiene_fibra(componentes_por_id[cid].tipo)
         )
 
         if not isfinite(perdida_total) or not isfinite(longitud_total):
@@ -265,6 +283,7 @@ def calcular_enlaces(componentes: list[Componente], conexiones: list[Conexion]) 
                 longitud_total_km=longitud_total,
                 margen_sobrecarga_db=round(potencia_sobrecarga - potencia_recibida, 3),
                 motivos=motivos,
+                cantidad_onts=cantidad_de(ont),
             )
         )
 

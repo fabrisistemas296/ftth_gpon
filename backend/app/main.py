@@ -28,7 +28,7 @@ from app.inicializacion import inicializar_base
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    inicializar_base()  # crea tablas, escenarios y profesor si faltan
+    inicializar_base()  # crea tablas, migra bases existentes y configura al profesor
     yield
 
 

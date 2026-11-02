@@ -16,6 +16,7 @@ export function NodoComponente({ data, selected }: NodeProps<NodoFlow>) {
         <span className="nodo__nombre">{nombre}</span>
         <span className="nodo__dato">{resumenNodo(c)}</span>
       </div>
+      {c.tipo === 'LOTE_FIBRA_ONT' && <span className="nodo__cantidad" aria-label={`${c.cantidad} pares fibra y ONT`}>×{c.cantidad}</span>}
       <Handle type="source" position={Position.Right} id="der" />
     </div>
   );

@@ -3,9 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { BarraSuperior } from '../components/BarraSuperior';
 import { Aviso } from '../components/Aviso';
 import { Cargando } from '../components/Cargando';
-import { escenariosApi, proyectosApi, simulacionesApi } from '../api/endpoints';
+import { proyectosApi, simulacionesApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
-import type { Escenario, ProyectoDetalle } from '../api/types';
+import type { ProyectoDetalle } from '../api/types';
 import { CAPACIDAD_DOWNSTREAM_MBPS, UMBRAL_CONGESTION_PCT, consumo, fmt, rangoReceptorComun } from '../simulacion/trafico';
 import { formatoFecha } from '../utils';
 import { useAuth } from '../auth/AuthContext';
@@ -22,12 +22,9 @@ export function Resultados() {
   const proyectoId = Number(id);
   const simulacionId = Number(simId);
   const { usuario } = useAuth();
-  // El profesor ve los resultados en modo lectura (sin recalcular ni crear simulaciones).
-  const lectura = usuario?.rol === 'profesor';
-  const base = lectura ? `/profesor/proyectos/${proyectoId}` : `/proyectos/${proyectoId}`;
-
   const [detalle, setDetalle] = useState<ProyectoDetalle | null>(null);
-  const [escenarios, setEscenarios] = useState<Escenario[]>([]);
+  const lectura = usuario?.rol === 'profesor' && detalle?.usuario_id !== usuario.id;
+  const base = lectura ? `/profesor/proyectos/${proyectoId}` : `/proyectos/${proyectoId}`;
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recalculando, setRecalculando] = useState(false);
@@ -46,7 +43,6 @@ export function Resultados() {
       } catch (e) {
         setError(msg(e, 'No se pudo cargar la simulación.'));
       }
-      escenariosApi.listar().then(setEscenarios).catch(() => undefined);
       setCargando(false);
     })();
   }, [cargar]);
@@ -103,7 +99,6 @@ export function Resultados() {
 
   const ro = sim.resultado_optico;
   const rt = sim.resultado_trafico;
-  const esc = escenarios.find((e) => e.id === sim.escenario_id);
   const perfil = consumo(sim.tipo_consumo);
   const operativo = ro?.estado_operativo === 'operativo';
   const margen = ro && rango ? ro.potencia_recibida_dbm - rango.sensibilidad : null;
@@ -137,7 +132,7 @@ export function Resultados() {
           <div>
             <h1>Resultados de la simulación</h1>
             <p>
-              {esc?.nombre ?? 'Sin escenario'} · {sim.cantidad_usuarios} usuarios · {perfil.nombre.toLowerCase()} · ejecutada {formatoFecha(sim.fecha_ejecucion)}
+              {sim.cantidad_usuarios} usuarios · {perfil.nombre.toLowerCase()} · ejecutada {formatoFecha(sim.fecha_ejecucion)}
             </p>
           </div>
           {lectura ? (

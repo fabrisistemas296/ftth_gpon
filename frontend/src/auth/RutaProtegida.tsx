@@ -12,6 +12,6 @@ export function RutaProtegida({ rol, children }: { rol?: Rol; children: ReactNod
   return <>{children}</>;
 }
 
-export function inicioSegunRol(rol: Rol) {
-  return rol === 'profesor' ? '/profesor' : '/proyectos';
+export function inicioSegunRol(_rol: Rol) {
+  return '/proyectos';
 }

@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.core.deps import get_usuario_actual
 from app.models.models import Conexion, Topologia, Componente, Proyecto, Usuario
 from app.schemas.conexion import ConexionCreate, ConexionResponse
+from app.services.calculo_optico import TopologiaInvalidaError
+from app.services.conexiones import validar_conexiones_en_edicion
 
 
 router = APIRouter(
@@ -13,7 +15,7 @@ router = APIRouter(
 )
 
 
-def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session):
+def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session, editar: bool = False):
     topologia = db.query(Topologia).filter(Topologia.id == topologia_id).first()
     if not topologia:
         raise HTTPException(status_code=404, detail="La topología no existe")
@@ -22,11 +24,11 @@ def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session
     if not proyecto:
         raise HTTPException(status_code=404, detail="El proyecto asociado no existe")
 
-    if usuario.rol == "alumno" and proyecto.usuario_id != usuario.id:
+    if (editar or usuario.rol == "alumno") and proyecto.usuario_id != usuario.id:
         raise HTTPException(status_code=403, detail="No tenés permiso sobre esta topología")
 
 
-def validar_conexion(conexion: ConexionCreate, db: Session):
+def validar_conexion(conexion: ConexionCreate, db: Session, conexion_id: int | None = None):
     topologia = db.query(Topologia).filter(Topologia.id == conexion.topologia_id).first()
     if not topologia:
         raise HTTPException(status_code=404, detail="La topología no existe")
@@ -61,6 +63,14 @@ def validar_conexion(conexion: ConexionCreate, db: Session):
             detail="El componente destino no pertenece a la topología indicada"
         )
 
+    componentes = db.query(Componente).filter_by(topologia_id=conexion.topologia_id).all()
+    existentes = db.query(Conexion).filter_by(topologia_id=conexion.topologia_id).all()
+    candidatas = [c for c in existentes if c.id != conexion_id] + [conexion]
+    try:
+        validar_conexiones_en_edicion(componentes, candidatas)
+    except TopologiaInvalidaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
 
 @router.get("/{conexion_id}", response_model=ConexionResponse)
 def obtener_conexion(
@@ -81,10 +91,10 @@ def obtener_conexion(
 def crear_conexion(
     conexion: ConexionCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
+    _verificar_acceso_topologia(conexion.topologia_id, usuario, db, editar=True)
     validar_conexion(conexion, db)
-    _verificar_acceso_topologia(conexion.topologia_id, usuario, db)
 
     nueva_conexion = Conexion(
         topologia_id=conexion.topologia_id,
@@ -104,14 +114,15 @@ def modificar_conexion(
     conexion_id: int,
     conexion_data: ConexionCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     conexion = db.query(Conexion).filter(Conexion.id == conexion_id).first()
     if not conexion:
         raise HTTPException(status_code=404, detail="La conexión no existe")
 
-    validar_conexion(conexion_data, db)
-    _verificar_acceso_topologia(conexion_data.topologia_id, usuario, db)
+    _verificar_acceso_topologia(conexion.topologia_id, usuario, db, editar=True)
+    _verificar_acceso_topologia(conexion_data.topologia_id, usuario, db, editar=True)
+    validar_conexion(conexion_data, db, conexion_id=conexion_id)
 
     conexion.topologia_id = conexion_data.topologia_id
     conexion.componente_origen_id = conexion_data.componente_origen_id
@@ -127,13 +138,13 @@ def modificar_conexion(
 def eliminar_conexion(
     conexion_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     conexion = db.query(Conexion).filter(Conexion.id == conexion_id).first()
     if not conexion:
         raise HTTPException(status_code=404, detail="La conexión no existe")
 
-    _verificar_acceso_topologia(conexion.topologia_id, usuario, db)
+    _verificar_acceso_topologia(conexion.topologia_id, usuario, db, editar=True)
 
     db.delete(conexion)
     db.commit()

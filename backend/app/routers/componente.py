@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
-from app.models.models import Componente, Topologia, Proyecto, Usuario
+from app.core.deps import get_usuario_actual
+from app.models.models import Componente, Conexion, Topologia, Proyecto, Usuario
+from app.services.calculo_optico import TopologiaInvalidaError
+from app.services.conexiones import validar_conexiones_en_edicion
 from app.schemas.componente import (
     ComponenteCreate,
     ComponenteResponse
@@ -27,8 +29,7 @@ def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session
     """
     Verifica que el usuario pueda acceder a la topología indicada.
     - Alumno: solo si es dueño del proyecto asociado.
-    - Profesor: solo lectura (requerir_dueno=True lo bloquea siempre,
-      porque un profesor nunca es "dueño" de un proyecto de alumno).
+    - Profesor: puede editar sus propios proyectos y leer los de los alumnos.
     """
     proyecto = _obtener_proyecto_de_topologia(topologia_id, db)
     if not proyecto:
@@ -37,8 +38,8 @@ def _verificar_acceso_topologia(topologia_id: int, usuario: Usuario, db: Session
     if usuario.rol == "alumno" and proyecto.usuario_id != usuario.id:
         raise HTTPException(status_code=403, detail="No tenés permiso sobre esta topología")
 
-    if requerir_dueno and usuario.rol != "alumno":
-        raise HTTPException(status_code=403, detail="Esta acción requiere ser el alumno dueño del proyecto")
+    if requerir_dueno and proyecto.usuario_id != usuario.id:
+        raise HTTPException(status_code=403, detail="Sólo podés editar componentes de tus propios proyectos")
 
 
 @router.get("/{componente_id}", response_model=ComponenteResponse)
@@ -60,13 +61,14 @@ def obtener_componente(
 def crear_componente(
     componente: ComponenteCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     _verificar_acceso_topologia(componente.topologia_id, usuario, db, requerir_dueno=True)
 
     nuevo_componente = Componente(
         topologia_id=componente.topologia_id,
         tipo=componente.tipo,
+        cantidad=componente.cantidad,
         posicion_x=componente.posicion_x,
         posicion_y=componente.posicion_y,
         potencia_tx_dbm=componente.potencia_tx_dbm,
@@ -92,7 +94,7 @@ def actualizar_componente(
     componente_id: int,
     datos: ComponenteCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     """
     Actualiza los parámetros de un componente existente (RF-08 a RF-11).
@@ -111,7 +113,20 @@ def actualizar_componente(
             detail="No se puede mover un componente a otra topología"
         )
 
+    # Validar el reemplazo antes de modificar el objeto persistido. Aumentar
+    # la cantidad del lote también consume nuevas salidas del splitter.
+    candidato = Componente(id=componente_id, **datos.model_dump())
+    componentes = db.query(Componente).filter_by(topologia_id=componente.topologia_id).all()
+    conexiones = db.query(Conexion).filter_by(topologia_id=componente.topologia_id).all()
+    try:
+        validar_conexiones_en_edicion(
+            [candidato if c.id == componente_id else c for c in componentes], conexiones,
+        )
+    except TopologiaInvalidaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     componente.tipo = datos.tipo
+    componente.cantidad = datos.cantidad
     componente.posicion_x = datos.posicion_x
     componente.posicion_y = datos.posicion_y
     componente.potencia_tx_dbm = datos.potencia_tx_dbm
@@ -134,7 +149,7 @@ def actualizar_componente(
 def eliminar_componente(
     componente_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     componente = db.query(Componente).filter(Componente.id == componente_id).first()
     if not componente:

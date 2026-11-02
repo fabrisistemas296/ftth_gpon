@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.core.deps import get_usuario_actual
 from app.models.models import ResultadoOptico, Simulacion, Proyecto, Usuario
 from app.schemas.resultado_optico import (
     ResultadoOpticoCreate,
@@ -49,7 +49,7 @@ def obtener_resultado_optico(
 def crear_resultado_optico(
     datos: ResultadoOpticoCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     _, proyecto = _obtener_proyecto_de_simulacion(datos.simulacion_id, db)
 

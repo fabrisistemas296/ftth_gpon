@@ -44,6 +44,7 @@ class ProyectoDetalleResponse(BaseModel):
     nombre: str
     descripcion: str | None
     usuario_id: int
+    publicado: bool = False
     fecha_creacion: str
     fecha_modificacion: str
     topologia: TopologiaDetalleResponse | None

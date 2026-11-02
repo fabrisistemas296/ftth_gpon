@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.core.deps import get_usuario_actual
 from app.models.models import Topologia, Proyecto, Usuario, Componente, Conexion
 from app.schemas.topologia import TopologiaCreate, TopologiaResponse
 from app.schemas.viabilidad import TopologiaPrevia, ViabilidadResponse
@@ -35,7 +35,7 @@ def _verificar_acceso_topologia(topologia: Topologia, usuario: Usuario, db: Sess
 def crear_topologia(
     topologia: TopologiaCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     proyecto = _obtener_proyecto_o_404(topologia.proyecto_id, db)
 
@@ -79,7 +79,7 @@ def obtener_topologia(
 def eliminar_topologia(
     topologia_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     topologia = db.query(Topologia).filter(Topologia.id == topologia_id).first()
     if not topologia:

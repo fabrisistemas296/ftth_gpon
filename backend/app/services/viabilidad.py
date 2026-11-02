@@ -12,4 +12,5 @@ def evaluar_viabilidad(componentes, conexiones) -> ViabilidadResponse:
         estado="no_viable" if motivos else "viable",
         motivos=motivos,
         enlaces=[EnlaceViabilidad.model_validate(e) for e in enlaces],
+        cantidad_onts=sum(e.cantidad_onts for e in enlaces),
     )

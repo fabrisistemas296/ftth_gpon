@@ -31,6 +31,7 @@ import { revisarTopologia, validarConexion } from '../editor/validacion';
 import { construirAristas } from '../editor/aristas';
 import { useViabilidad } from '../editor/useViabilidad';
 import { PanelViabilidad } from '../editor/PanelViabilidad';
+import { useAuth } from '../auth/AuthContext';
 
 const tiposNodo = { componente: NodoComponente };
 const msg = (e: unknown, def: string) => (e instanceof ApiError || e instanceof Error ? e.message : def);
@@ -52,6 +53,7 @@ function EditorInterno() {
   const { id } = useParams();
   const proyectoId = Number(id);
   const navigate = useNavigate();
+  const { usuario } = useAuth();
   const { screenToFlowPosition, fitView } = useReactFlow();
   const lienzoRef = useRef<HTMLDivElement>(null);
 
@@ -111,6 +113,11 @@ function EditorInterno() {
       setErrorCarga(null);
       try {
         let d = await proyectosApi.detalle(proyectoId);
+        if (cancelado) return;
+        if (d.usuario_id !== usuario?.id) {
+          navigate(`/profesor/proyectos/${proyectoId}`, { replace: true });
+          return;
+        }
         if (!d.topologia) {
           try {
             await topologiasApi.crear(proyectoId);
@@ -136,7 +143,7 @@ function EditorInterno() {
     return () => {
       cancelado = true;
     };
-  }, [proyectoId, fitView]);
+  }, [proyectoId, fitView, usuario?.id, navigate]);
 
   // Sincroniza el lienzo con los datos persistidos, conservando posición y selección.
   useEffect(() => {
@@ -233,8 +240,8 @@ function EditorInterno() {
   // ---------- Conectar ----------
   const motivoInvalido = useCallback(
     (origen: string | null, destino: string | null) =>
-      validarConexion(porId.get(origen ?? ''), porId.get(destino ?? ''), conexiones),
-    [porId, conexiones],
+      validarConexion(porId.get(origen ?? ''), porId.get(destino ?? ''), conexiones, componentes),
+    [porId, conexiones, componentes],
   );
 
   const isValidConnection = useCallback(

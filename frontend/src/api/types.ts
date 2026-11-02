@@ -21,8 +21,13 @@ export interface Proyecto {
   nombre: string;
   descripcion: string | null;
   usuario_id: number;
+  publicado: boolean;
   fecha_creacion: string;
   fecha_modificacion: string;
+}
+
+export interface ProyectoPublicado extends Proyecto {
+  autor: string;
 }
 
 export interface ProyectoInput {
@@ -30,12 +35,13 @@ export interface ProyectoInput {
   descripcion: string | null;
 }
 
-export type TipoComponente = 'OLT' | 'FIBRA' | 'SPLITTER' | 'ONT_ONU';
+export type TipoComponente = 'OLT' | 'FIBRA' | 'SPLITTER' | 'ONT_ONU' | 'LOTE_FIBRA_ONT';
 
 export interface Componente {
   id: number;
   topologia_id: number;
   tipo: TipoComponente;
+  cantidad: number;
   posicion_x: number;
   posicion_y: number;
   potencia_tx_dbm: number | null;
@@ -96,14 +102,6 @@ export interface ProyectoDetalle extends Proyecto {
   simulaciones: SimulacionDetalle[];
 }
 
-export interface Escenario {
-  id: number;
-  nombre: string;
-  cantidad_usuarios_default: number;
-  distancia_tipica_km: number;
-  descripcion: string | null;
-}
-
 export interface Simulacion {
   id: number;
   proyecto_id: number;
@@ -115,7 +113,7 @@ export interface Simulacion {
 
 export interface SimulacionInput {
   proyecto_id: number;
-  escenario_id: number | null;
+  escenario_id?: number | null;
   cantidad_usuarios: number | null;
   tipo_consumo: TipoConsumo;
 }
@@ -129,8 +127,10 @@ export interface Viabilidad {
   estado: 'viable' | 'no_viable' | 'incompleta';
   alcance_maximo_km: number;
   motivos: string[];
+  cantidad_onts: number;
   enlaces: {
     ont_id: number;
+    cantidad_onts: number;
     longitud_total_km: number;
     perdida_total_db: number;
     potencia_recibida_dbm: number;

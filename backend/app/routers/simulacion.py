@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.core.deps import get_usuario_actual, requerir_rol_alumno
+from app.core.deps import get_usuario_actual
 from app.models.models import (
     Simulacion,
     Proyecto,
@@ -90,7 +90,7 @@ def obtener_simulaciones_por_proyecto(
 def crear_simulacion(
     datos: SimulacionCreate,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     proyecto = db.query(Proyecto).filter(Proyecto.id == datos.proyecto_id).first()
     if not proyecto:
@@ -136,7 +136,7 @@ def crear_simulacion(
 def calcular_simulacion(
     simulacion_id: int,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(requerir_rol_alumno),
+    usuario: Usuario = Depends(get_usuario_actual),
 ):
     """
     Ejecuta el motor de cálculo (óptico + tráfico) sobre la simulación

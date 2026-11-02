@@ -12,12 +12,15 @@ export const PERDIDAS_SPLITTER_DB: Record<string, number> = {
 };
 export const RELACIONES = Object.keys(PERDIDAS_SPLITTER_DB);
 export const CLASES_POTENCIA = ['B+', 'C+'] as const;
+export const esTerminal = (tipo: TipoComponente) => tipo === 'ONT_ONU' || tipo === 'LOTE_FIBRA_ONT';
+export const tieneFibra = (tipo: TipoComponente) => tipo === 'FIBRA' || tipo === 'LOTE_FIBRA_ONT';
 
 export const ETIQUETA: Record<TipoComponente, string> = {
   OLT: 'OLT',
   FIBRA: 'Fibra',
   SPLITTER: 'Splitter',
   ONT_ONU: 'ONT/ONU',
+  LOTE_FIBRA_ONT: 'Lote fibra + ONT',
 };
 
 export const DESCRIPCION: Record<TipoComponente, string> = {
@@ -25,6 +28,7 @@ export const DESCRIPCION: Record<TipoComponente, string> = {
   FIBRA: 'Enlace de fibra óptica',
   SPLITTER: 'Divisor óptico pasivo',
   ONT_ONU: 'Terminal del usuario',
+  LOTE_FIBRA_ONT: 'Pares de cable y terminal idénticos',
 };
 
 // Valores iniciales al agregar un componente (el backend exige los campos
@@ -34,6 +38,8 @@ export const VALORES_INICIALES: Record<TipoComponente, Partial<Componente>> = {
   FIBRA: { longitud_km: 1, atenuacion_db_km: 0.28, cantidad_conectores: 2, cantidad_empalmes: 0 },
   SPLITTER: { relacion_division: '1:8' },
   ONT_ONU: { sensibilidad_min_dbm: -28, potencia_sobrecarga_dbm: -8 },
+  LOTE_FIBRA_ONT: { cantidad: 8, longitud_km: 1, atenuacion_db_km: 0.28, cantidad_conectores: 2,
+    cantidad_empalmes: 0, sensibilidad_min_dbm: -28, potencia_sobrecarga_dbm: -8 },
 };
 
 const CAMPOS: (keyof ComponenteInput)[] = [
@@ -43,13 +49,13 @@ const CAMPOS: (keyof ComponenteInput)[] = [
 
 export function componenteVacio(topologia_id: number, tipo: TipoComponente, x: number, y: number): ComponenteInput {
   const base = Object.fromEntries(CAMPOS.map((c) => [c, null])) as unknown as ComponenteInput;
-  return { ...base, ...VALORES_INICIALES[tipo], topologia_id, tipo, posicion_x: Math.round(x), posicion_y: Math.round(y) };
+  return { ...base, cantidad: 1, ...VALORES_INICIALES[tipo], topologia_id, tipo, posicion_x: Math.round(x), posicion_y: Math.round(y) };
 }
 
 export function aInput(c: Componente): ComponenteInput {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id: _id, ...resto } = c;
-  return { ...resto, posicion_x: Math.round(c.posicion_x), posicion_y: Math.round(c.posicion_y) };
+  return { ...resto, cantidad: c.cantidad ?? 1, posicion_x: Math.round(c.posicion_x), posicion_y: Math.round(c.posicion_y) };
 }
 
 export function perdidaFibra(c: Pick<Componente, 'longitud_km' | 'atenuacion_db_km' | 'cantidad_conectores' | 'cantidad_empalmes'>) {
@@ -60,7 +66,7 @@ export function perdidaFibra(c: Pick<Componente, 'longitud_km' | 'atenuacion_db_
 }
 
 export function perdidaComponente(c: Componente): number {
-  if (c.tipo === 'FIBRA') return perdidaFibra(c).total;
+  if (tieneFibra(c.tipo)) return perdidaFibra(c).total;
   if (c.tipo === 'SPLITTER') return PERDIDAS_SPLITTER_DB[c.relacion_division ?? ''] ?? 0;
   return 0;
 }
@@ -79,6 +85,8 @@ export function resumenNodo(c: Componente): string {
       return `${c.relacion_division ?? '—'} · ${num(perdidaComponente(c), 1)} dB`;
     case 'ONT_ONU':
       return `${num(c.sensibilidad_min_dbm ?? 0, 0)} a ${num(c.potencia_sobrecarga_dbm ?? 0, 0)} dBm`;
+    case 'LOTE_FIBRA_ONT':
+      return `${c.cantidad} pares · ${num(c.longitud_km ?? 0)} km · ${num(perdidaFibra(c).total)} dB/cable`;
   }
 }
 

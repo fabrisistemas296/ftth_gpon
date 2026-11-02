@@ -1,4 +1,5 @@
 import type { Componente, TipoConsumo } from '../api/types';
+import { esTerminal } from '../editor/catalogo';
 
 // Deben coincidir con app/core/constantes.py. En el frontend solo se usan
 // para mostrar la demanda estimada antes de ejecutar; los resultados
@@ -21,7 +22,7 @@ export const fmt = (v: number, dec = 2) =>
 // Si todas las ONT/ONU comparten sensibilidad y sobrecarga, el rango del
 // receptor del peor caso es conocido aunque el backend no informe qué ONT es.
 export function rangoReceptorComun(componentes: Componente[]) {
-  const onts = componentes.filter((c) => c.tipo === 'ONT_ONU');
+  const onts = componentes.filter((c) => esTerminal(c.tipo));
   if (!onts.length) return null;
   const s = onts[0].sensibilidad_min_dbm;
   const o = onts[0].potencia_sobrecarga_dbm;

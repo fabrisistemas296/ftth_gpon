@@ -52,9 +52,44 @@ de tráfico existente; no alteran la distancia ni el presupuesto óptico.
   Si algún enlace falla, responde 422 **antes** de calcular tráfico y de guardar
   resultados. La vista previa enviada por el cliente nunca autoriza el cálculo.
 
-No cambia el esquema de la base de datos. Los resultados históricos conservan
-sus valores originales; la corrección se aplica a las evaluaciones y cálculos
-nuevos. Si falla un recálculo, no se sobrescribe el resultado anterior.
+Los resultados históricos conservan sus valores originales; la corrección se
+aplica a las evaluaciones y cálculos nuevos. Si falla un recálculo, no se
+sobrescribe el resultado anterior.
+
+## Bloques de pares fibra + ONT
+
+`LOTE_FIBRA_ONT` es un terminal compuesto por `cantidad` pares completos de cable
+y ONT. La cantidad es un entero positivo; para componentes individuales es 1.
+Los parámetros de fibra (longitud, atenuación, conectores y empalmes) son **por
+cable**, y los del receptor (sensibilidad y sobrecarga), por ONT. Se configuran
+todos en el mismo panel. Un bloque representa elementos idénticos en paralelo.
+
+Cada par cuenta como una salida del splitter. Por ejemplo, un bloque de 8 pares
+y una ONT individual requieren 9 salidas, aunque se dibujen como dos nodos.
+Si el bloque contiene varios pares debe conectarse directamente al splitter:
+una fibra individual no representa varias salidas en paralelo. El bloque tiene
+un único enlace hacia la red y no admite conexiones adicionales ni tránsito.
+
+La correspondencia cable–ONT es interna al bloque y uno a uno: la misma cantidad
+define ambos conjuntos. No puede quedar una fibra interna sin su ONT ni una ONT
+interna sin cable. Los bloques desconectados, las fibras individuales sin sus
+dos extremos conectados y las ONT con conexiones adicionales impiden simular.
+Las salidas de splitter que todavía no se usan pueden quedar libres.
+
+El motor suma una sola vez la longitud y pérdida del cable del bloque a cada
+recorrido representado. Evalúa un recorrido por bloque e informa cuántas ONT
+representa (`cantidad_onts`), además del total de ONT en la respuesta. Es
+equivalente a desplegar los pares idénticos como componentes individuales.
+
+El servidor comprueba capacidad y conexiones al crear/editar conexiones o
+cambiar parámetros (incluida la cantidad del bloque y la división del splitter).
+Una operación que excede las salidas o agrega un enlace adicional se rechaza
+con 400 sin modificar la topología guardada. Las redes en construcción pueden
+guardarse incompletas; deben quedar completas antes de simular.
+
+La base agrega la columna `componente.cantidad`, con valor inicial 1 para los
+registros anteriores. La migración aditiva se ejecuta al iniciar el backend y
+puede repetirse sin duplicar la columna ni borrar datos.
 
 ## Verificación
 
@@ -64,4 +99,6 @@ insuficiente, sobrecarga, presupuesto de clase, ciclos, permisos y bloqueo real
 del motor de tráfico. La fixture desactiva la inicialización de producción para
 que el arranque de TestClient tampoco acceda a la base real.
 
-Desde `frontend`: `npm ci` y `npm run build`.
+Desde `frontend`: `npm ci`, `npm test` y `npm run build`. Las pruebas cubren el
+formulario combinado, ocupación de salidas, mezcla de lotes y ONT individuales,
+conexiones adicionales y visualización de cantidad y pérdidas por unidad.

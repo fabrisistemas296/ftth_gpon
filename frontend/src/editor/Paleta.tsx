@@ -3,7 +3,7 @@ import { DESCRIPCION, ETIQUETA } from './catalogo';
 import { IconoComponente } from './IconoComponente';
 
 export const TIPO_DND = 'application/ftth-tipo';
-const TIPOS: TipoComponente[] = ['OLT', 'FIBRA', 'SPLITTER', 'ONT_ONU'];
+const TIPOS: TipoComponente[] = ['OLT', 'FIBRA', 'SPLITTER', 'ONT_ONU', 'LOTE_FIBRA_ONT'];
 
 export function Paleta({ onAgregar, deshabilitado }: { onAgregar: (tipo: TipoComponente) => void; deshabilitado?: boolean }) {
   return (

@@ -9,7 +9,7 @@ import { Simulacion } from './pages/Simulacion';
 import { Resultados } from './pages/Resultados';
 import { ProfesorProyectos } from './pages/ProfesorProyectos';
 import { ProfesorProyecto } from './pages/ProfesorProyecto';
-import { ProfesorEscenarios } from './pages/ProfesorEscenarios';
+import { ProyectosPublicados } from './pages/ProyectosPublicados';
 import { NoEncontrada } from './pages/NoEncontrada';
 import { Cargando } from './components/Cargando';
 
@@ -25,24 +25,25 @@ export function App() {
       <Route path="/" element={<Inicio />} />
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<Registro />} />
-      <Route path="/proyectos" element={<RutaProtegida rol="alumno"><Proyectos /></RutaProtegida>} />
+      <Route path="/proyectos" element={<RutaProtegida><Proyectos /></RutaProtegida>} />
+      <Route path="/proyectos/publicados" element={<RutaProtegida rol="alumno"><ProyectosPublicados /></RutaProtegida>} />
       <Route
         path="/proyectos/:id"
-        element={<RutaProtegida rol="alumno"><Editor /></RutaProtegida>}
+        element={<RutaProtegida><Editor /></RutaProtegida>}
       />
       <Route
         path="/proyectos/:id/simulacion"
-        element={<RutaProtegida rol="alumno"><Simulacion /></RutaProtegida>}
+        element={<RutaProtegida><Simulacion /></RutaProtegida>}
       />
       <Route
         path="/proyectos/:id/simulaciones/:simId"
-        element={<RutaProtegida rol="alumno"><Resultados /></RutaProtegida>}
+        element={<RutaProtegida><Resultados /></RutaProtegida>}
       />
       <Route
         path="/profesor"
         element={<RutaProtegida rol="profesor"><ProfesorProyectos /></RutaProtegida>}
       />
-      <Route path="/profesor/escenarios" element={<RutaProtegida rol="profesor"><ProfesorEscenarios /></RutaProtegida>} />
+      <Route path="/profesor/escenarios" element={<RutaProtegida rol="profesor"><Navigate to="/proyectos" replace /></RutaProtegida>} />
       <Route path="/profesor/proyectos/:id" element={<RutaProtegida rol="profesor"><ProfesorProyecto /></RutaProtegida>} />
       <Route
         path="/profesor/proyectos/:id/simulaciones/:simId"

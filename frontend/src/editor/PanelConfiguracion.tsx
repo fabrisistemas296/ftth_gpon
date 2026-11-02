@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { Componente } from '../api/types';
 import type { ComponenteInput } from '../api/endpoints';
 import { Aviso } from '../components/Aviso';
-import { ALCANCE_MAXIMO_GPON_KM, CLASES_POTENCIA, DESCRIPCION, ETIQUETA, PERDIDA_CONECTOR_DB, PERDIDA_EMPALME_DB, PERDIDAS_SPLITTER_DB, RELACIONES, aInput, num, perdidaFibra } from './catalogo';
+import { ALCANCE_MAXIMO_GPON_KM, CLASES_POTENCIA, DESCRIPCION, ETIQUETA, PERDIDA_CONECTOR_DB, PERDIDA_EMPALME_DB, PERDIDAS_SPLITTER_DB, RELACIONES, aInput, esTerminal, num, perdidaFibra, tieneFibra } from './catalogo';
 
 type Valores = Record<string, string>;
 
@@ -15,6 +15,7 @@ const aNumero = (s: string) => {
 
 function valoresIniciales(c: Componente): Valores {
   return {
+    cantidad: aTexto(c.cantidad ?? 1),
     potencia_tx_dbm: aTexto(c.potencia_tx_dbm),
     clase_potencia: c.clase_potencia ?? 'B+',
     longitud_km: aTexto(c.longitud_km),
@@ -44,7 +45,8 @@ function construir(c: Componente, v: Valores): { datos?: ComponenteInput; errore
       datos.potencia_tx_dbm = rango('potencia_tx_dbm', -10, 15);
       datos.clase_potencia = v.clase_potencia;
       break;
-    case 'FIBRA': {
+    case 'FIBRA':
+    case 'LOTE_FIBRA_ONT': {
       const lon = rango('longitud_km', 0, ALCANCE_MAXIMO_GPON_KM);
       if (!errores.longitud_km && lon === 0) errores.longitud_km = 'La longitud debe ser mayor a 0.';
       datos.longitud_km = lon;
@@ -56,15 +58,15 @@ function construir(c: Componente, v: Valores): { datos?: ComponenteInput; errore
     case 'SPLITTER':
       datos.relacion_division = v.relacion_division;
       break;
-    case 'ONT_ONU': {
-      const sens = rango('sensibilidad_min_dbm', -45, 0);
-      const sobre = rango('potencia_sobrecarga_dbm', -45, 10);
-      if (!errores.sensibilidad_min_dbm && !errores.potencia_sobrecarga_dbm && sens >= sobre)
-        errores.potencia_sobrecarga_dbm = 'Debe ser mayor que la sensibilidad mínima.';
-      datos.sensibilidad_min_dbm = sens;
-      datos.potencia_sobrecarga_dbm = sobre;
-      break;
-    }
+  }
+  datos.cantidad = c.tipo === 'LOTE_FIBRA_ONT' ? rango('cantidad', 1, 2147483647, true) : 1;
+  if (esTerminal(c.tipo)) {
+    const sens = rango('sensibilidad_min_dbm', -45, 0);
+    const sobre = rango('potencia_sobrecarga_dbm', -45, 10);
+    if (!errores.sensibilidad_min_dbm && !errores.potencia_sobrecarga_dbm && sens >= sobre)
+      errores.potencia_sobrecarga_dbm = 'Debe ser mayor que la sensibilidad mínima.';
+    datos.sensibilidad_min_dbm = sens;
+    datos.potencia_sobrecarga_dbm = sobre;
   }
   return Object.keys(errores).length ? { errores } : { datos, errores };
 }
@@ -145,7 +147,7 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
     );
   };
 
-  const previaFibra = c.tipo === 'FIBRA'
+  const previaFibra = tieneFibra(c.tipo)
     ? perdidaFibra({
         longitud_km: aNumero(v.longitud_km) || 0,
         atenuacion_db_km: aNumero(v.atenuacion_db_km) || 0,
@@ -161,6 +163,13 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
         <h2>{nombre}</h2>
       </div>
 
+      {c.tipo === 'LOTE_FIBRA_ONT' && (
+        <>
+          {campoNum('cantidad', 'Cantidad de pares fibra + ONT', undefined, 'Cada par ocupa una salida del splitter. Todas las fibras y ONT comparten los parámetros siguientes.')}
+          <h3>Fibra de cada par</h3>
+        </>
+      )}
+
       {c.tipo === 'OLT' && (
         <>
           <div className="campo">
@@ -174,7 +183,7 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
         </>
       )}
 
-      {c.tipo === 'FIBRA' && (
+      {tieneFibra(c.tipo) && (
         <>
           {campoNum('longitud_km', 'Longitud', 'km', 'Máximo 20 km sumando todos los tramos del recorrido OLT–ONT.')}
           {campoNum('atenuacion_db_km', 'Atenuación', 'dB/km', 'Típico en 1490/1550 nm: 0,25 a 0,30 dB/km.')}
@@ -184,7 +193,7 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
           </div>
           {previaFibra && (
             <div className="previa">
-              <div className="previa__titulo">Pérdida estimada del tramo</div>
+              <div className="previa__titulo">{c.tipo === 'LOTE_FIBRA_ONT' ? 'Pérdida por cable del lote' : 'Pérdida estimada del tramo'}</div>
               <div><span>Fibra</span><span>{num(previaFibra.fibra)} dB</span></div>
               <div><span>Conectores × {num(PERDIDA_CONECTOR_DB, 1)} dB</span><span>{num(previaFibra.conectores)} dB</span></div>
               <div><span>Empalmes × {num(PERDIDA_EMPALME_DB, 1)} dB</span><span>{num(previaFibra.empalmes)} dB</span></div>
@@ -209,8 +218,9 @@ export function PanelConfiguracion({ componente: c, nombre, soloLectura, onAplic
         </>
       )}
 
-      {c.tipo === 'ONT_ONU' && (
+      {esTerminal(c.tipo) && (
         <>
+          {c.tipo === 'LOTE_FIBRA_ONT' && <h3>ONT de cada par</h3>}
           {campoNum('sensibilidad_min_dbm', 'Sensibilidad mínima', 'dBm', 'Clase B+: −28 dBm. Clase C+: −32 dBm.')}
           {campoNum('potencia_sobrecarga_dbm', 'Potencia de sobrecarga', 'dBm', 'Típicamente entre −8 y −3 dBm.')}
         </>

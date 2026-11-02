@@ -1,6 +1,6 @@
 import { api } from './client';
 import type {
-  Componente, Conexion, Escenario, LoginResponse, Proyecto, ProyectoDetalle, ProyectoInput, ResultadoCalculo,
+  Componente, Conexion, LoginResponse, Proyecto, ProyectoPublicado, ProyectoDetalle, ProyectoInput, ResultadoCalculo,
   Simulacion, SimulacionInput, Topologia, Usuario, Viabilidad,
 } from './types';
 
@@ -16,7 +16,10 @@ export const authApi = {
 };
 
 export const proyectosApi = {
-  listar: () => api<Proyecto[]>('/proyectos/'),
+  listar: (propios = false) => api<Proyecto[]>(`/proyectos/${propios ? '?propios=true' : ''}`),
+  publicados: () => api<ProyectoPublicado[]>('/proyectos/publicados'),
+  publicar: (id: number, publicado: boolean) => api<Proyecto>(`/proyectos/${id}/publicacion`, { method: 'PUT', json: { publicado } }),
+  copiar: (id: number) => api<Proyecto>(`/proyectos/${id}/copiar`, { method: 'POST' }),
   detalle: (id: number) => api<ProyectoDetalle>(`/proyectos/${id}/detalle`),
   crear: (datos: ProyectoInput) => api<Proyecto>('/proyectos/', { method: 'POST', json: datos }),
   actualizar: (id: number, datos: ProyectoInput) => api<Proyecto>(`/proyectos/${id}`, { method: 'PUT', json: datos }),
@@ -43,10 +46,6 @@ export const conexionesApi = {
   eliminar: (id: number) => api<{ message: string }>(`/conexiones/${id}`, { method: 'DELETE' }),
 };
 
-export const escenariosApi = {
-  listar: () => api<Escenario[]>('/escenarios/'),
-};
-
 export const simulacionesApi = {
   crear: (datos: SimulacionInput) => api<Simulacion>('/simulaciones/', { method: 'POST', json: datos }),
   calcular: (id: number) => api<ResultadoCalculo>(`/simulaciones/${id}/calcular`, { method: 'POST' }),
@@ -55,10 +54,4 @@ export const simulacionesApi = {
 
 export const usuariosApi = {
   listar: () => api<Usuario[]>('/usuarios/'),
-};
-
-export type EscenarioInput = Omit<Escenario, 'id'>;
-
-export const escenariosAdminApi = {
-  actualizar: (id: number, datos: EscenarioInput) => api<Escenario>(`/escenarios/${id}`, { method: 'PUT', json: datos }),
 };

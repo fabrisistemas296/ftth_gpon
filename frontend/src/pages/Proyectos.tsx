@@ -9,6 +9,8 @@ import { proyectosApi, topologiasApi } from '../api/endpoints';
 import { ApiError } from '../api/client';
 import type { Proyecto, ProyectoDetalle } from '../api/types';
 import { formatoFecha, parseFecha } from '../utils';
+import { useAuth } from '../auth/AuthContext';
+import { PestanasProyectos } from '../components/PestanasProyectos';
 
 interface Resumen {
   componentes: number;
@@ -34,6 +36,9 @@ type Formulario = { modo: 'crear' } | { modo: 'editar'; proyecto: Proyecto };
 
 export function Proyectos() {
   const navigate = useNavigate();
+  const { usuario } = useAuth();
+  const profesor = usuario?.rol === 'profesor';
+  const [publicando, setPublicando] = useState<number | null>(null);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
   const [resumenes, setResumenes] = useState<Record<number, Resumen>>({});
   const [cargando, setCargando] = useState(true);
@@ -64,7 +69,7 @@ export function Proyectos() {
     setCargando(true);
     setError(null);
     try {
-      const lista = await proyectosApi.listar();
+      const lista = await proyectosApi.listar(true);
       setProyectos(lista);
       lista.forEach((p) => void cargarResumen(p.id));
     } catch (e) {
@@ -96,6 +101,20 @@ export function Proyectos() {
     setDescripcion('');
     setErrorForm(null);
     setForm({ modo: 'crear' });
+  };
+
+  const publicar = async (p: Proyecto) => {
+    setPublicando(p.id);
+    setError(null);
+    try {
+      const actualizado = await proyectosApi.publicar(p.id, !p.publicado);
+      setProyectos((ps) => ps.map((c) => c.id === p.id ? actualizado : c));
+      setAviso(actualizado.publicado ? 'Proyecto publicado. Los alumnos ya pueden copiarlo.' : 'Publicación retirada. Las copias de los alumnos se conservan.');
+    } catch (e) {
+      setError(msg(e, 'No se pudo cambiar la publicación del proyecto.'));
+    } finally {
+      setPublicando(null);
+    }
   };
 
   const abrirEditar = (p: Proyecto) => {
@@ -171,10 +190,11 @@ export function Proyectos() {
     <div className="pagina">
       <BarraSuperior />
       <main className="contenedor">
+        <PestanasProyectos />
         <div className="encabezado">
           <div>
             <h1>Mis proyectos</h1>
-            <p>Creá una topología nueva o abrí un proyecto guardado para seguir trabajando.</p>
+            <p>{profesor ? 'Creá, probá y publicá proyectos para que los alumnos puedan copiarlos.' : 'Creá una topología nueva o copiá un proyecto publicado por tu profesor.'}</p>
           </div>
           <button type="button" className="btn btn--primario" onClick={abrirCrear}>
             <svg width="16" height="16" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
@@ -221,6 +241,7 @@ export function Proyectos() {
                   {r && <EstadoBadge estado={r.estado} />}
                 </div>
                 <p className="tarjeta-proyecto__desc">{p.descripcion || 'Sin descripción.'}</p>
+                {profesor && <span className="etiqueta">{p.publicado ? 'Publicado para alumnos' : 'Borrador'}</span>}
                 <div className="tarjeta-proyecto__datos">
                   <span>{r ? `${r.componentes} componentes` : '…'}</span>
                   <span>{r ? `${r.simulaciones} simulaciones` : ''}</span>
@@ -228,6 +249,9 @@ export function Proyectos() {
                 <div className="tarjeta-proyecto__pie">
                   <span>Modificado {formatoFecha(p.fecha_modificacion)}</span>
                   <div className="acciones">
+                    {profesor && <button type="button" className="btn btn--secundario" disabled={publicando !== null} onClick={() => void publicar(p)}>
+                      {publicando === p.id ? 'Guardando…' : p.publicado ? 'Retirar publicación' : 'Publicar'}
+                    </button>}
                     <button type="button" className="btn-icono btn-icono--borde" aria-label={`Editar ${p.nombre}`} onClick={() => abrirEditar(p)}>
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10.5 2.5l3 3L6 13H3v-3z" /></svg>
                     </button>

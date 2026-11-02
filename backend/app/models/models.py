@@ -1,5 +1,5 @@
 from app.database import Base
-from sqlalchemy import Column, ForeignKey, Integer, String, text, Float
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, text, Float, false
 from app.database import Base
 
 
@@ -20,6 +20,7 @@ class Proyecto(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String, nullable=False)
     descripcion = Column(String, nullable=True)
+    publicado = Column(Boolean, nullable=False, default=False, server_default=false())
     usuario_id = Column(
         Integer,
         ForeignKey("usuario.id", ondelete="CASCADE"),
@@ -61,6 +62,7 @@ class Componente(Base):
     )
 
     tipo = Column(String, nullable=False)
+    cantidad = Column(Integer, nullable=False, default=1, server_default=text("1"))
 
     posicion_x = Column(Float, nullable=False)
     posicion_y = Column(Float, nullable=False)

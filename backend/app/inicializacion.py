@@ -5,7 +5,7 @@ Se ejecuta al iniciar el backend. Deja la base lista para usar en
 entornos donde no hay consola (por ejemplo, el plan gratuito de Render):
 
 1. Crea las tablas que falten (no borra ni modifica las existentes).
-2. Carga los escenarios predefinidos si todavía no existen.
+2. Aplica las migraciones aditivas para bases existentes.
 3. Crea el usuario profesor a partir de variables de entorno, si están
    definidas y el email no está registrado.
 
@@ -22,36 +22,19 @@ import os
 
 from app.database import Base, SessionLocal, engine
 from app.models import models  # noqa: F401  (registra las entidades en Base)
-from app.models.models import EscenarioPredefinido, Usuario
+from app.models.models import Usuario
 from app.core.security import hash_password
+from app.migraciones import migrar_cantidad_componentes, migrar_publicacion_proyectos
 
 logger = logging.getLogger("uvicorn.error")
 
-# Valores ilustrativos: ajustarlos con los tutores (también se pueden
-# editar después desde la aplicación, con el usuario profesor).
-ESCENARIOS = [
-    ("Barrio urbano", 150, 2.0, "Zona residencial densa con distancias cortas a la central."),
-    ("Zona rural", 40, 15.0, "Baja densidad de usuarios y tramos troncales largos."),
-    ("Campus universitario", 300, 1.0, "Alta densidad de usuarios en edificios cercanos."),
-    ("Operador FTTH", 64, 5.0, "Despliegue típico de un operador con splitters 1:64."),
-]
-
-
 def inicializar_base() -> None:
     Base.metadata.create_all(bind=engine)
+    migrar_cantidad_componentes(engine)
+    migrar_publicacion_proyectos(engine)
 
     db = SessionLocal()
     try:
-        for nombre, usuarios, distancia, descripcion in ESCENARIOS:
-            if not db.query(EscenarioPredefinido).filter_by(nombre=nombre).first():
-                db.add(EscenarioPredefinido(
-                    nombre=nombre,
-                    cantidad_usuarios_default=usuarios,
-                    distancia_tipica_km=distancia,
-                    descripcion=descripcion,
-                ))
-                logger.info("Escenario creado: %s", nombre)
-
         email = os.environ.get("PROFESOR_EMAIL")
         password = os.environ.get("PROFESOR_PASSWORD")
         if email and password:

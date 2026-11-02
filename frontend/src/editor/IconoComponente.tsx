@@ -8,6 +8,7 @@ export function IconoComponente({ tipo }: { tipo: TipoComponente }) {
       {tipo === 'FIBRA' && <svg {...comun}><path d="M2 12c3 0 3-6 7-6s4 6 7 6" /></svg>}
       {tipo === 'SPLITTER' && <svg {...comun}><path d="M2 9h5M7 9l8-5M7 9h8M7 9l8 5" /></svg>}
       {tipo === 'ONT_ONU' && <svg {...comun}><path d="M3 8l6-5 6 5v7H3z" /><path d="M7 15v-4h4v4" /></svg>}
+      {tipo === 'LOTE_FIBRA_ONT' && <svg {...comun}><path d="M5 3h9l2 2v8M4 6l5-3 5 3v9H4z" /><path d="M8 15v-4h3v4M1 9h3M1 12h3" /></svg>}
     </span>
   );
 }

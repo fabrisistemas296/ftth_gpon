@@ -162,6 +162,7 @@ button:disabled { cursor: not-allowed; opacity: 0.6; }
 }
 .tarjeta-proyecto__pie > span { font-size: 13px; color: var(--tinta-suave); }
 .acciones { display: flex; gap: 8px; }
+.tarjeta-proyecto__pie .acciones { flex-wrap: wrap; }
 
 /* Modal */
 .modal-fondo {
@@ -262,6 +263,8 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--borde-i
 .nodo--olt { background: var(--noche); border-color: var(--noche); color: #fff; }
 .nodo--olt .icono-comp { background: #1d4560; }
 .nodo--fibra { border-radius: 28px; }
+.nodo--lote_fibra_ont { border-style: double; border-width: 3px; padding: 8px 12px; }
+.nodo__cantidad { background: var(--acento-suave); color: var(--acento-texto); border-radius: 6px; padding: 4px 6px; font-family: var(--mono); font-size: 12px; }
 .nodo--sel { border: 2px solid var(--acento); padding: 9px 13px; box-shadow: 0 0 0 4px #b9d9eb; }
 .nodo--olt.nodo--sel { border-color: #7cc4e8; }
 .nodo__texto { display: flex; flex-direction: column; gap: 2px; }

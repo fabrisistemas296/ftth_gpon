@@ -59,6 +59,23 @@ def test_login_password_incorrecta_devuelve_401(client):
     assert r.status_code == 401
 
 
+def test_login_profesor_no_reutiliza_identidad_del_alumno(client, alumno_headers, profesor_headers):
+    # El mismo navegador puede conservar peticiones que usaron el token anterior.
+    r = client.post('/auth/login', data={
+        'username': 'profesor.test@ejemplo.com', 'password': 'test1234',
+    }, headers=alumno_headers)
+    assert r.status_code == 200
+    assert r.json()['rol'] == 'profesor'
+    nuevos_headers = {'Authorization': f'Bearer {r.json()["access_token"]}'}
+    perfil = client.get('/usuarios/me', headers=nuevos_headers)
+    assert perfil.status_code == 200
+    assert perfil.json()['rol'] == 'profesor'
+    assert perfil.json()['email'] == 'profesor.test@ejemplo.com'
+    anterior = client.get('/usuarios/me', headers=alumno_headers)
+    assert anterior.json()['rol'] == 'alumno'
+    assert anterior.json()['id'] != perfil.json()['id']
+
+
 def test_login_email_inexistente_devuelve_401(client):
     r = client.post("/auth/login", data={"username": "no.existe@ejemplo.com", "password": "cualquiera"})
     assert r.status_code == 401

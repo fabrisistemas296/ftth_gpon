@@ -19,6 +19,11 @@ Para generar la versión de producción: `npm run build` (queda en `dist/`).
 
 Para ejecutar las pruebas del editor: `npm test`.
 
+Las pruebas también cubren el cambio de cuenta: cerrar sesión invalida las
+consultas pendientes, y una respuesta del usuario anterior no puede reemplazar
+al nuevo ni cerrar su sesión. El login verifica el perfil con su token nuevo
+antes de guardar la sesión y comprueba que corresponda al correo ingresado.
+
 ## Proyectos del profesor y copias para alumnos
 
 Ambos perfiles tienen **Mis proyectos**: pueden crear, editar, eliminar y

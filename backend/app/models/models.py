@@ -1,5 +1,5 @@
 from app.database import Base
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, text, Float, false
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, text, Float, false
 from app.database import Base
 
 
@@ -52,6 +52,9 @@ class Topologia(Base):
 
 class Componente(Base):
     __tablename__ = "componente"
+    __table_args__ = (
+        CheckConstraint("tipo IN ('OLT', 'FIBRA', 'SPLITTER', 'ONT_ONU', 'LOTE_FIBRA_ONT')", name="ck_componente_tipo"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 

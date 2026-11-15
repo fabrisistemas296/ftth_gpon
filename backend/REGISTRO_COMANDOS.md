@@ -16,8 +16,8 @@ Estos comandos son utiles para preparar y ejecutar la API, aunque no forman part
 | --- | --- |
 | `python -m venv .venv` | Crea un entorno virtual llamado `.venv` para aislar las dependencias del proyecto. |
 | `.\.venv\Scripts\Activate.ps1` | Activa el entorno virtual en PowerShell. |
-| `pip install fastapi uvicorn pydantic sqlalchemy` | Instala las dependencias principales de la API. |
-| `uvicorn main:app --reload` | Inicia el servidor FastAPI usando el objeto `app` de `main.py` y reinicia el servidor al detectar cambios. |
+| `python -m pip install -r requirements.txt` | Instala todas las dependencias del backend con las versiones definidas por el proyecto. |
+| `python -m uvicorn app.main:app --reload` | Inicia el servidor FastAPI usando el objeto `app` de `app/main.py` y reinicia el servidor al detectar cambios. |
 | `deactivate` | Sale del entorno virtual activo. |
 
 ## Notas

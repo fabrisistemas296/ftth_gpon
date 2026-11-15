@@ -91,6 +91,18 @@ La base agrega la columna `componente.cantidad`, con valor inicial 1 para los
 registros anteriores. La migración aditiva se ejecuta al iniciar el backend y
 puede repetirse sin duplicar la columna ni borrar datos.
 
+Las bases SQLite anteriores también pueden tener un `CHECK` que sólo admite
+`OLT`, `FIBRA`, `SPLITTER` y `ONT_ONU`. El inicio amplía esa restricción para
+admitir `LOTE_FIBRA_ONT`: agregar la columna `cantidad` por sí solo no cambia
+los tipos permitidos. Las bases nuevas incluyen los cinco tipos en su `CHECK`.
+
+Antes de modificar una base en archivo se guarda un respaldo junto a ella,
+con nombre `ftth_gpon.pre-lote-<identificador>.sqlite3`. La migración conserva
+registros, identificadores, conexiones, secuencia de IDs y las demás
+restricciones, índices, triggers y vistas. Se comprueban las claves foráneas
+antes de confirmar la transacción. Si falla, se revierte el cambio. Se utiliza
+el [procedimiento de cambio de esquema de SQLite](https://www.sqlite.org/lang_altertable.html#making_other_kinds_of_table_schema_changes).
+
 ## Verificación
 
 Desde `backend`: `python -m pytest -q`. Incluye casos de 20 km exactos, exceso por

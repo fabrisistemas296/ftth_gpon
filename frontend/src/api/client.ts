@@ -20,7 +20,7 @@ export class ApiError extends Error {
 }
 
 let onUnauthorized: (() => void) | null = null;
-export function setUnauthorizedHandler(fn: () => void) {
+export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
@@ -47,6 +47,7 @@ interface Opciones {
   json?: unknown;
   form?: Record<string, string>;
   auth?: boolean;
+  token?: string;
 }
 
 export async function api<T>(path: string, opts: Opciones = {}): Promise<T> {
@@ -61,12 +62,12 @@ export async function api<T>(path: string, opts: Opciones = {}): Promise<T> {
     body = new URLSearchParams(opts.form).toString();
   }
 
-  const token = tokenStore.get();
+  const token = opts.token ?? tokenStore.get();
   if (opts.auth !== false && token) headers.Authorization = `Bearer ${token}`;
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { method: opts.method ?? 'GET', headers, body });
+    res = await fetch(`${API_URL}${path}`, { method: opts.method ?? 'GET', headers, body, cache: 'no-store' });
   } catch {
     throw new ApiError(0, `No se pudo conectar con el servidor (${API_URL}). Verificá que el backend esté en ejecución.`);
   }
@@ -82,7 +83,8 @@ export async function api<T>(path: string, opts: Opciones = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    if (res.status === 401 && opts.auth !== false && onUnauthorized) onUnauthorized();
+    // Un 401 atrasado de otra cuenta no debe cerrar la sesión nueva.
+    if (res.status === 401 && opts.auth !== false && token && token === tokenStore.get() && onUnauthorized) onUnauthorized();
     throw new ApiError(res.status, mensajeDeError(res.status, data));
   }
   return data as T;

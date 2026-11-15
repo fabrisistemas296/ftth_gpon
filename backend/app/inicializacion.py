@@ -5,7 +5,7 @@ Se ejecuta al iniciar el backend. Deja la base lista para usar en
 entornos donde no hay consola (por ejemplo, el plan gratuito de Render):
 
 1. Crea las tablas que falten (no borra ni modifica las existentes).
-2. Aplica las migraciones aditivas para bases existentes.
+2. Aplica las migraciones para bases existentes, conservando sus datos.
 3. Crea el usuario profesor a partir de variables de entorno, si están
    definidas y el email no está registrado.
 
@@ -24,7 +24,7 @@ from app.database import Base, SessionLocal, engine
 from app.models import models  # noqa: F401  (registra las entidades en Base)
 from app.models.models import Usuario
 from app.core.security import hash_password
-from app.migraciones import migrar_cantidad_componentes, migrar_publicacion_proyectos
+from app.migraciones import migrar_cantidad_componentes, migrar_publicacion_proyectos, migrar_tipos_componentes
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -32,6 +32,7 @@ def inicializar_base() -> None:
     Base.metadata.create_all(bind=engine)
     migrar_cantidad_componentes(engine)
     migrar_publicacion_proyectos(engine)
+    migrar_tipos_componentes(engine)
 
     db = SessionLocal()
     try:

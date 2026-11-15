@@ -12,7 +12,7 @@ export const authApi = {
     api<LoginResponse>('/auth/login', { method: 'POST', form: { username: email, password }, auth: false }),
   registrar: (nombre: string, email: string, password: string) =>
     api<Usuario>('/usuarios/', { method: 'POST', json: { nombre, email, password }, auth: false }),
-  yo: () => api<Usuario>('/usuarios/me'),
+  yo: (token?: string) => api<Usuario>('/usuarios/me', { token }),
 };
 
 export const proyectosApi = {

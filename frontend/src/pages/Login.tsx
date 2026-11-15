@@ -4,7 +4,6 @@ import { useAuth } from '../auth/AuthContext';
 import { inicioSegunRol } from '../auth/RutaProtegida';
 import { AccesoLayout } from './AccesoLayout';
 import { Aviso } from '../components/Aviso';
-import { ApiError } from '../api/client';
 
 export function Login() {
   const { usuario, login, sesionExpirada } = useAuth();
@@ -27,7 +26,7 @@ export function Login() {
       const u = await login(email.trim(), password);
       navigate(inicioSegunRol(u.rol), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'No se pudo iniciar sesión.');
+      setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
     } finally {
       setEnviando(false);
     }
